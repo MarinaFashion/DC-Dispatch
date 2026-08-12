@@ -1,0 +1,4 @@
+include requirements.txt
+recursive-include dc_dispatch *.css *.csv *.html *.ico *.js *.json *.md *.png *.py *.svg *.txt
+recursive-exclude dc_dispatch *.pyc
+

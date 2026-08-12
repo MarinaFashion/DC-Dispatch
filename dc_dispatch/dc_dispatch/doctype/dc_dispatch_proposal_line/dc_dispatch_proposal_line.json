@@ -1,0 +1,48 @@
+{
+  "actions": [],
+  "allow_rename": 0,
+  "autoname": "hash",
+  "creation": "2026-08-12 00:00:00.000000",
+  "doctype": "DocType",
+  "engine": "InnoDB",
+  "field_order": ["run", "revision", "source_warehouse", "store_warehouse", "transit_warehouse", "section_item", "item_template", "item_code", "main_group", "related_set", "section_demand", "sales_score", "share_percent", "suggested_qty", "final_qty", "exclude", "override_reason", "section_status", "validation_status", "material_request"],
+  "fields": [
+    {"fieldname": "run", "fieldtype": "Link", "in_list_view": 1, "in_standard_filter": 1, "label": "DC Dispatch Run", "options": "DC Dispatch Run", "reqd": 1, "search_index": 1},
+    {"fieldname": "revision", "fieldtype": "Int", "label": "Revision", "read_only": 1},
+    {"fieldname": "source_warehouse", "fieldtype": "Link", "label": "Source DC", "options": "Warehouse", "read_only": 1},
+    {"fieldname": "store_warehouse", "fieldtype": "Link", "in_list_view": 1, "in_standard_filter": 1, "label": "Store Warehouse", "options": "Warehouse", "read_only": 1, "search_index": 1},
+    {"fieldname": "transit_warehouse", "fieldtype": "Link", "label": "Transit Warehouse", "options": "Warehouse", "read_only": 1},
+    {"fieldname": "section_item", "fieldtype": "Section Break", "label": "Item"},
+    {"fieldname": "item_template", "fieldtype": "Link", "in_list_view": 1, "in_standard_filter": 1, "label": "Item Template", "options": "Item", "read_only": 1, "search_index": 1},
+    {"fieldname": "item_code", "fieldtype": "Link", "in_list_view": 1, "in_standard_filter": 1, "label": "Item Variant", "options": "Item", "read_only": 1, "search_index": 1},
+    {"fieldname": "main_group", "fieldtype": "Data", "label": "Main Group", "read_only": 1},
+    {"fieldname": "related_set", "fieldtype": "Data", "label": "Related Set", "read_only": 1},
+    {"fieldname": "section_demand", "fieldtype": "Section Break", "label": "Allocation"},
+    {"fieldname": "sales_score", "fieldtype": "Float", "label": "Historical Demand Score", "read_only": 1},
+    {"fieldname": "share_percent", "fieldtype": "Percent", "label": "Store Share %", "read_only": 1},
+    {"fieldname": "suggested_qty", "fieldtype": "Int", "in_list_view": 1, "label": "Suggested Qty", "read_only": 1},
+    {"fieldname": "final_qty", "fieldtype": "Int", "in_list_view": 1, "label": "Final Qty"},
+    {"default": "0", "fieldname": "exclude", "fieldtype": "Check", "label": "Exclude"},
+    {"fieldname": "override_reason", "fieldtype": "Small Text", "label": "Override Reason"},
+    {"fieldname": "section_status", "fieldtype": "Section Break", "label": "Status"},
+    {"default": "Valid", "fieldname": "validation_status", "fieldtype": "Select", "label": "Validation Status", "options": "Valid\nWarning\nError", "read_only": 1},
+    {"fieldname": "material_request", "fieldtype": "Link", "label": "Material Request", "options": "Material Request", "read_only": 1}
+  ],
+  "links": [],
+  "modified": "2026-08-12 00:00:00.000000",
+  "modified_by": "Administrator",
+  "module": "DC Dispatch",
+  "name": "DC Dispatch Proposal Line",
+  "owner": "Administrator",
+  "permissions": [
+    {"export": 1, "read": 1, "report": 1, "role": "Stock User"},
+    {"create": 1, "delete": 1, "export": 1, "read": 1, "report": 1, "role": "Stock Manager", "write": 1},
+    {"create": 1, "delete": 1, "export": 1, "read": 1, "report": 1, "role": "System Manager", "write": 1}
+  ],
+  "sort_field": "creation",
+  "sort_order": "ASC",
+  "states": [],
+  "title_field": "item_code",
+  "track_changes": 1
+}
+

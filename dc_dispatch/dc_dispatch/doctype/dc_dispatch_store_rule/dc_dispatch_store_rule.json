@@ -1,0 +1,32 @@
+{
+  "actions": [],
+  "allow_rename": 0,
+  "creation": "2026-08-12 00:00:00.000000",
+  "doctype": "DocType",
+  "editable_grid": 1,
+  "engine": "InnoDB",
+  "field_order": ["store_warehouse", "transit_warehouse", "decision", "reference_store", "tier", "priority", "minimum_per_variant", "maximum_per_style", "history_status"],
+  "fields": [
+    {"fieldname": "store_warehouse", "fieldtype": "Link", "in_list_view": 1, "label": "Store Warehouse", "options": "Warehouse", "reqd": 1},
+    {"fieldname": "transit_warehouse", "fieldtype": "Link", "in_list_view": 1, "label": "Transit Warehouse", "options": "Warehouse", "reqd": 1},
+    {"default": "Include", "fieldname": "decision", "fieldtype": "Select", "in_list_view": 1, "label": "No-History Decision", "options": "Include\nExclude\nUse Reference Store", "reqd": 1},
+    {"depends_on": "eval:doc.decision=='Use Reference Store'", "fieldname": "reference_store", "fieldtype": "Link", "label": "Reference Store", "options": "Warehouse"},
+    {"default": "B", "fieldname": "tier", "fieldtype": "Select", "in_list_view": 1, "label": "Tier", "options": "A\nB\nC", "reqd": 1},
+    {"default": "0", "fieldname": "priority", "fieldtype": "Int", "in_list_view": 1, "label": "Priority"},
+    {"default": "1", "fieldname": "minimum_per_variant", "fieldtype": "Int", "label": "Minimum per Size"},
+    {"default": "0", "description": "Zero means no store/style maximum.", "fieldname": "maximum_per_style", "fieldtype": "Int", "label": "Maximum per Style"},
+    {"default": "Pending", "fieldname": "history_status", "fieldtype": "Select", "label": "History Status", "options": "Pending\nHas History\nNo History\nReference Store Missing", "read_only": 1}
+  ],
+  "istable": 1,
+  "links": [],
+  "modified": "2026-08-12 00:00:00.000000",
+  "modified_by": "Administrator",
+  "module": "DC Dispatch",
+  "name": "DC Dispatch Store Rule",
+  "owner": "Administrator",
+  "permissions": [],
+  "sort_field": "modified",
+  "sort_order": "DESC",
+  "states": []
+}
+

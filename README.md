@@ -1,0 +1,84 @@
+# DC Dispatch
+
+DC Dispatch is a standalone ERPNext v15 app for the first dispatch of newly received fashion styles from a Distribution Center to stores. Later DC replenishment and store-to-store reallocation remain outside this app and continue through Marina's Stock Allocation app.
+
+## Release 1 workflow
+
+1. Create a **DC Dispatch Run**.
+2. In Block A, select the historical sales period and add matching Item fields separately for each Item Main Group.
+3. In Block B, add metadata-driven Item filters and load the target single-color templates.
+4. Load eligible store Warehouses using the configured Warehouse **Is Store (used in Allocation)** field.
+5. Resolve stores without history by excluding them or mapping them to a reference store.
+6. Calculate the store-and-size proposal.
+7. Export the protected Excel workbook, edit only Final Qty / Exclude / Override Reason, and attach it back to the run.
+8. Import and validate the reviewed proposal.
+9. Approve it and create one Material Request per final store, targeting its transit warehouse.
+
+## Catalog assumptions
+
+- One Item Template represents one style in one color.
+- Variants under that template are sizes only.
+- A second color is a separate Item Template with its own display date, season, collection, batch/drop, dispatch percentage, and allocation.
+- Related products use a configurable existing Item field (for example `custom_related_set`). All in-stock members of the same set must be selected, and every receiving store gets all members or none.
+
+## Configuration
+
+Open **DC Dispatch Settings** after installation and verify the actual fieldnames on your site:
+
+| Setting | Default |
+|---|---|
+| Warehouse Is Store Field | `custom_is_store_used_in_allocation` |
+| Warehouse Transit Field | `custom_transit_warehouse` |
+| Item Main Group Field | `custom_item_main_group` |
+| Item Subgroup Field | `custom_item_sub_group` |
+| Item Related Set Field | `custom_related_set` |
+
+The app deliberately stores fieldnames in Settings instead of hard-coding site-specific customizations.
+
+## Calculation rules
+
+- Historical net sales use submitted Sales Invoices within the selected dates.
+- Returns are included. When ERPNext provides the original Sales Invoice Item link, a cross-store return is attributed to the original selling warehouse.
+- Historical templates must share the target Item Main Group and meet the run's minimum percentage across selected, nonblank matching fields for that group.
+- A new store mapped to a reference store copies that store's demand score, then all store shares are recalculated to total 100%.
+- Dispatch target equals whole current DC stock multiplied by the planner's dispatch percentage.
+- The DC size ratio sets the per-size target.
+- Store tiers and manual priority control minimum display bundle order.
+- A store receives every in-stock size at its minimum quantity or receives zero for the entire style.
+- Zero-demand stores receive their minimum display bundle only.
+- Store maximums trigger repeated proportional redistribution.
+- Any unallocatable quantity remains in the DC.
+
+## Safety and audit controls
+
+- The same template cannot be loaded into another non-cancelled initial dispatch run.
+- Every proposal has a revision number and exact DC stock snapshot.
+- A calculation-input fingerprint blocks export, import, approval, or execution if any run criteria changed after calculation.
+- Any stock change blocks Excel import, approval, and Material Request creation until recalculation.
+- Imported workbooks must contain every original proposal row and no fabricated rows.
+- Edited/excluded rows require an override reason.
+- Variant totals cannot exceed snapshot stock; template totals cannot exceed dispatch targets.
+- Related-set all-or-none validation runs during import and approval.
+- Material Request creation is idempotent per run and final store.
+- The app adds three read-only traceability fields to Material Request: DC Dispatch Run, Final Store Warehouse, and DC Dispatch Instructions.
+
+## Installation
+
+```bash
+bench get-app https://github.com/MarinaFashion/DC-Dispatch.git
+bench --site your-site install-app dc_dispatch
+bench --site your-site migrate
+bench build --app dc_dispatch
+```
+
+Use a demo site first. Confirm the five custom-field mappings in Settings before creating a run.
+
+## Local tests
+
+The allocation tests are deliberately independent of a Frappe site:
+
+```bash
+PYTHONPATH=. python -m unittest dc_dispatch.tests.test_allocation -v
+```
+
+Full integration testing still requires a Frappe/ERPNext v15 bench with representative Item, Bin, Sales Invoice, Warehouse, and Material Request data.

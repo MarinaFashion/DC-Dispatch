@@ -1,0 +1,36 @@
+{
+  "charts": [],
+  "content": "[{\"id\":\"header\",\"type\":\"header\",\"data\":{\"text\":\"<span class=\\\"h4\\\">DC Dispatch</span>\",\"col\":12}},{\"id\":\"new-run\",\"type\":\"shortcut\",\"data\":{\"shortcut_name\":\"New Initial Dispatch Run\",\"col\":4}},{\"id\":\"runs\",\"type\":\"shortcut\",\"data\":{\"shortcut_name\":\"Initial Dispatch Runs\",\"col\":4}},{\"id\":\"settings\",\"type\":\"shortcut\",\"data\":{\"shortcut_name\":\"DC Dispatch Settings\",\"col\":4}}]",
+  "creation": "2026-08-12 00:00:00.000000",
+  "custom_blocks": [],
+  "docstatus": 0,
+  "doctype": "Workspace",
+  "for_user": "",
+  "hide_custom": 0,
+  "icon": "stock",
+  "idx": 0,
+  "is_hidden": 0,
+  "label": "DC Dispatch",
+  "links": [],
+  "modified": "2026-08-12 00:00:00.000000",
+  "modified_by": "Administrator",
+  "module": "DC Dispatch",
+  "name": "DC Dispatch",
+  "number_cards": [],
+  "owner": "Administrator",
+  "parent_page": "Stock",
+  "public": 1,
+  "quick_lists": [],
+  "roles": [
+    {"role": "Stock User"},
+    {"role": "Stock Manager"}
+  ],
+  "sequence_id": 40.0,
+  "shortcuts": [
+    {"color": "Green", "doc_view": "New", "label": "New Initial Dispatch Run", "link_to": "DC Dispatch Run", "type": "DocType"},
+    {"color": "Blue", "doc_view": "List", "label": "Initial Dispatch Runs", "link_to": "DC Dispatch Run", "type": "DocType"},
+    {"color": "Grey", "doc_view": "Form", "label": "DC Dispatch Settings", "link_to": "DC Dispatch Settings", "type": "DocType"}
+  ],
+  "title": "DC Dispatch"
+}
+

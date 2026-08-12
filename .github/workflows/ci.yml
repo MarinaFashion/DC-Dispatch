@@ -1,0 +1,26 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  fast-validation:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Compile Python
+        run: python -m compileall -q dc_dispatch
+      - name: Validate JSON
+        run: |
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          for path in Path("dc_dispatch").rglob("*.json"):
+              json.loads(path.read_text())
+          PY
+      - name: Run allocation tests
+        run: PYTHONPATH=. python -m unittest dc_dispatch.tests.test_allocation -v

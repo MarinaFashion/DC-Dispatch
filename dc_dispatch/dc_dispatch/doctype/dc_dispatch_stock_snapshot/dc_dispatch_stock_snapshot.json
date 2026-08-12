@@ -1,0 +1,29 @@
+{
+  "actions": [],
+  "allow_rename": 0,
+  "autoname": "hash",
+  "creation": "2026-08-12 00:00:00.000000",
+  "doctype": "DocType",
+  "engine": "InnoDB",
+  "field_order": ["run", "revision", "warehouse", "item_code", "actual_qty"],
+  "fields": [
+    {"fieldname": "run", "fieldtype": "Link", "in_standard_filter": 1, "label": "DC Dispatch Run", "options": "DC Dispatch Run", "reqd": 1, "search_index": 1},
+    {"fieldname": "revision", "fieldtype": "Int", "label": "Revision", "read_only": 1},
+    {"fieldname": "warehouse", "fieldtype": "Link", "label": "Warehouse", "options": "Warehouse", "read_only": 1},
+    {"fieldname": "item_code", "fieldtype": "Link", "in_standard_filter": 1, "label": "Item Code", "options": "Item", "read_only": 1, "search_index": 1},
+    {"fieldname": "actual_qty", "fieldtype": "Float", "label": "Actual Qty", "read_only": 1}
+  ],
+  "links": [],
+  "modified": "2026-08-12 00:00:00.000000",
+  "modified_by": "Administrator",
+  "module": "DC Dispatch",
+  "name": "DC Dispatch Stock Snapshot",
+  "owner": "Administrator",
+  "permissions": [
+    {"read": 1, "report": 1, "role": "Stock Manager"},
+    {"create": 1, "delete": 1, "read": 1, "report": 1, "role": "System Manager", "write": 1}
+  ],
+  "sort_field": "creation",
+  "sort_order": "ASC",
+  "states": []
+}
