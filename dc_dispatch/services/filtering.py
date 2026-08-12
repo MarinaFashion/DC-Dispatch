@@ -23,6 +23,8 @@ def _matches_other_filters(row, target, selections, fieldnames):
         if run_fieldname == target or selected in (None, ""):
             continue
         item_fieldname = fieldnames.get(run_fieldname)
-        if not item_fieldname or row.get(item_fieldname) != selected:
+        if not item_fieldname:
+            continue
+        if row.get(item_fieldname) != selected:
             return False
     return True

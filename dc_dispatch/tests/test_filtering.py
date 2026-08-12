@@ -54,6 +54,22 @@ class TestCascadingFilters(unittest.TestCase):
         self.assertNotIn(None, result["collection"])
         self.assertEqual(result["collection"], ["Core", "Fashion"])
 
+    def test_missing_optional_mapping_does_not_blank_other_filters(self):
+        fieldnames = {**self.fieldnames, "subgroup": None}
+        result = cascading_options(
+            self.rows,
+            {
+                "season": "Summer",
+                "collection": None,
+                "main_group": None,
+                "subgroup": "Old Saved Value",
+            },
+            fieldnames,
+        )
+        self.assertEqual(result["collection"], ["Core", "Fashion"])
+        self.assertEqual(result["main_group"], ["Dresses", "Uppers"])
+        self.assertEqual(result["subgroup"], [])
+
 
 if __name__ == "__main__":
     unittest.main()

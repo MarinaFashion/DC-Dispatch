@@ -5,9 +5,10 @@ const TARGET_FILTER_METHOD =
 const TARGET_FILTER_FIELDS = ["item_year", "season", "collection", "drop", "main_group", "subgroup"];
 
 frappe.ui.form.on("DC Dispatch Run", {
-    setup(frm) {
-        load_item_field_metadata(frm);
-        refresh_target_filter_options(frm);
+    onload(frm) {
+        Promise.all([load_item_field_metadata(frm), refresh_target_filter_options(frm)]).catch(
+            (error) => show_filter_load_error(frm, error)
+        );
     },
 
     refresh(frm) {
@@ -53,22 +54,22 @@ frappe.ui.form.on("DC Dispatch Run", {
     },
 
     item_year(frm) {
-        refresh_target_filter_options(frm);
+        reload_target_filters(frm);
     },
     season(frm) {
-        refresh_target_filter_options(frm);
+        reload_target_filters(frm);
     },
     collection(frm) {
-        refresh_target_filter_options(frm);
+        reload_target_filters(frm);
     },
     drop(frm) {
-        refresh_target_filter_options(frm);
+        reload_target_filters(frm);
     },
     main_group(frm) {
-        refresh_target_filter_options(frm);
+        reload_target_filters(frm);
     },
     subgroup(frm) {
-        refresh_target_filter_options(frm);
+        reload_target_filters(frm);
     },
 });
 
@@ -125,6 +126,12 @@ function refresh_target_filter_options(frm) {
         if (request_id !== frm._dc_dispatch_filter_request_id) return;
         const data = response.message || {};
         const options_by_field = data.options || {};
+        const configuration_errors = data.configuration_errors || [];
+        if (configuration_errors.length) {
+            show_filter_load_error(frm, configuration_errors.join("<br>"));
+        } else {
+            frm._dc_dispatch_filter_error_shown = false;
+        }
         frm._dc_dispatch_standard_item_fields = new Set(
             Object.values(data.fieldnames || {}).filter((fieldname) => fieldname)
         );
@@ -145,6 +152,23 @@ function refresh_target_filter_options(frm) {
             main_group_options
         );
         frm.refresh_fields(TARGET_FILTER_FIELDS);
+    });
+}
+
+function reload_target_filters(frm) {
+    return refresh_target_filter_options(frm).catch((error) => show_filter_load_error(frm, error));
+}
+
+function show_filter_load_error(frm, error) {
+    if (frm._dc_dispatch_filter_error_shown) return;
+    frm._dc_dispatch_filter_error_shown = true;
+    const message = typeof error === "string"
+        ? error
+        : __("Could not load Item filter options. Check DC Dispatch Settings and the Error Log.");
+    frappe.msgprint({
+        title: __("DC Dispatch Filter Configuration"),
+        message,
+        indicator: "red",
     });
 }
 

@@ -107,15 +107,15 @@ def get_target_filter_options(
         "subgroup": settings.item_subgroup_field,
     }
     item_meta = frappe.get_meta("Item")
-    missing = sorted({
-        fieldname
-        for fieldname in fieldnames.values()
-        if fieldname and not item_meta.get_field(fieldname)
-    })
-    if missing:
-        frappe.throw(
-            _("These configured Item filter fields do not exist: {0}").format(", ".join(missing))
-        )
+    missing = {
+        run_fieldname: item_fieldname
+        for run_fieldname, item_fieldname in fieldnames.items()
+        if item_fieldname and not item_meta.get_field(item_fieldname)
+    }
+    resolved_fieldnames = {
+        run_fieldname: (None if run_fieldname in missing else item_fieldname)
+        for run_fieldname, item_fieldname in fieldnames.items()
+    }
 
     selections = {
         "item_year": item_year,
@@ -125,19 +125,27 @@ def get_target_filter_options(
         "main_group": main_group,
         "subgroup": subgroup,
     }
-    query_fields = sorted({fieldname for fieldname in fieldnames.values() if fieldname})
-    rows = frappe.get_all(
-        "Item",
-        filters={"has_variants": 1, "disabled": 0},
-        fields=query_fields,
-        distinct=True,
-        order_by=f"{query_fields[0]} asc",
-        limit_page_length=0,
-    )
+    query_fields = sorted({fieldname for fieldname in resolved_fieldnames.values() if fieldname})
+    rows = []
+    if query_fields:
+        rows = frappe.get_all(
+            "Item",
+            filters={"has_variants": 1, "disabled": 0},
+            fields=query_fields,
+            distinct=True,
+            order_by=f"{query_fields[0]} asc",
+            limit_page_length=0,
+        )
 
     return {
-        "options": cascading_options(rows, selections, fieldnames),
-        "fieldnames": fieldnames,
+        "options": cascading_options(rows, selections, resolved_fieldnames),
+        "fieldnames": resolved_fieldnames,
+        "configuration_errors": [
+            _("{0} is mapped to missing Item field {1}.").format(
+                _target_filter_label(run_fieldname), item_fieldname
+            )
+            for run_fieldname, item_fieldname in missing.items()
+        ],
     }
 
 
@@ -163,3 +171,14 @@ def standard_target_filters(run, settings=None):
             )
         result.append((item_fieldname, value))
     return result
+
+
+def _target_filter_label(fieldname):
+    return {
+        "item_year": _("Item Year"),
+        "season": _("Season"),
+        "collection": _("Collection"),
+        "drop": _("Drop / Batch"),
+        "main_group": _("Main Group"),
+        "subgroup": _("Item Subgroup"),
+    }.get(fieldname, fieldname)

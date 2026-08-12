@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "dc_dispatch"
-version = "0.1.1"
+version = "0.1.2"
 description = "Sales-informed initial DC dispatch planning for ERPNext"
 authors = [{ name = "Marina Trading Company" }]
 requires-python = ">=3.10"

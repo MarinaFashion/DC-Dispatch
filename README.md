@@ -31,7 +31,7 @@ Open **DC Dispatch Settings** after installation and verify the actual fieldname
 | Warehouse Is Store Field | `custom_is_store` |
 | Warehouse Transit Field | `custom_transit_warehouse` |
 | Item Main Group Field | `custom_item_main_group` |
-| Item Subgroup Field | `custom_item_sub_group` |
+| Item Subgroup Field | `item_sub_group` |
 | Item Related Set Field | `custom_related_set` |
 
 The app deliberately stores fieldnames in Settings instead of hard-coding site-specific customizations.
@@ -46,6 +46,18 @@ The four common catalog filters use the same Item fieldnames as Marina's Stock A
 | Drop / Batch | `custom_drop` |
 
 Main Group and Item Subgroup use the configurable mappings shown above. All six controls are populated from active Item Templates in one metadata query and narrow each other automatically. The generic child table remains available only as **Advanced Item Filters (Optional)**.
+
+Marina's verified Item fieldnames are:
+
+- `item_year`, `season`, `collection`, `custom_drop`
+- `custom_item_main_group`, `item_sub_group`
+- `custom_fit`, `custom_neckline`, `custom_fabric`, `custom_occasion`
+- `custom_style`, `custom_color_category_`, `custom_item_length`, `sleeve_type`
+- `colour_theme`, `age_group`, `status`, and `display_date`
+
+The latter fields are discovered from Item metadata and can be selected for historical exact matching or optional advanced filtering. Select values are compared after trimming whitespace and ignoring letter case.
+
+If a configured optional Item field is missing, the remaining dropdowns continue to load and the form displays the exact invalid mapping. Existing v0.1.1 settings using `custom_item_sub_group` are migrated automatically to `item_sub_group` when the site is updated.
 
 ## Workspace
 

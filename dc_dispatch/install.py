@@ -50,7 +50,7 @@ def _seed_settings():
         "warehouse_is_store_field": "custom_is_store",
         "warehouse_transit_field": "custom_transit_warehouse",
         "item_main_group_field": "custom_item_main_group",
-        "item_subgroup_field": "custom_item_sub_group",
+        "item_subgroup_field": "item_sub_group",
         "item_related_set_field": "custom_related_set",
         "default_dispatch_percentage": 80,
         "minimum_cohort_templates": 5,
@@ -70,6 +70,15 @@ def _seed_settings():
         and warehouse_meta.get_field("custom_is_store")
     ):
         settings.warehouse_is_store_field = "custom_is_store"
+        changed = True
+    legacy_subgroup_field = "custom_item_sub_group"
+    item_meta = frappe.get_meta("Item")
+    if (
+        settings.item_subgroup_field == legacy_subgroup_field
+        and not item_meta.get_field(legacy_subgroup_field)
+        and item_meta.get_field("item_sub_group")
+    ):
+        settings.item_subgroup_field = "item_sub_group"
         changed = True
     if changed:
         settings.save(ignore_permissions=True)

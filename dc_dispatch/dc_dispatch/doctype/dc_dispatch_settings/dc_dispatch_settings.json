@@ -21,7 +21,7 @@
     {"default": "custom_transit_warehouse", "description": "Fieldname on Warehouse that links a store to its transit warehouse.", "fieldname": "warehouse_transit_field", "fieldtype": "Data", "label": "Warehouse Transit Field", "reqd": 1},
     {"fieldname": "column_break_mapping", "fieldtype": "Column Break"},
     {"default": "custom_item_main_group", "fieldname": "item_main_group_field", "fieldtype": "Data", "label": "Item Main Group Field", "reqd": 1},
-    {"default": "custom_item_sub_group", "fieldname": "item_subgroup_field", "fieldtype": "Data", "label": "Item Subgroup Field"},
+    {"default": "item_sub_group", "description": "Exact fieldname on Item. Marina uses item_sub_group.", "fieldname": "item_subgroup_field", "fieldtype": "Data", "label": "Item Subgroup Field"},
     {"default": "custom_related_set", "fieldname": "item_related_set_field", "fieldtype": "Data", "label": "Item Related Set Field"},
     {"fieldname": "evidence_section", "fieldtype": "Section Break", "label": "Historical Evidence Warnings"},
     {"default": "5", "fieldname": "minimum_cohort_templates", "fieldtype": "Int", "label": "Minimum Matching Templates"},

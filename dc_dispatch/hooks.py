@@ -4,7 +4,7 @@ app_publisher = "Marina Trading Company"
 app_description = "Sales-informed initial DC dispatch planning"
 app_email = "it@marinafashion.com.sa"
 app_license = "MIT"
-app_version = "0.1.1"
+app_version = "0.1.2"
 
 required_apps = ["erpnext"]
 

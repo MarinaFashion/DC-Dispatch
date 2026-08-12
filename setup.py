@@ -2,7 +2,7 @@ from setuptools import find_packages, setup
 
 setup(
     name="dc_dispatch",
-    version="0.1.1",
+    version="0.1.2",
     description="Sales-informed initial DC dispatch planning for ERPNext",
     author="Marina Trading Company",
     packages=find_packages(),
