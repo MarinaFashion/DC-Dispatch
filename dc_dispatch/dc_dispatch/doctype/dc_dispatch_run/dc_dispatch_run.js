@@ -1,14 +1,13 @@
+const ITEM_FIELD_METHOD =
+    "dc_dispatch.dc_dispatch.doctype.dc_dispatch_run.dc_dispatch_run.get_eligible_item_fields";
+const TARGET_FILTER_METHOD =
+    "dc_dispatch.dc_dispatch.doctype.dc_dispatch_run.dc_dispatch_run.get_target_filter_options";
+const TARGET_FILTER_FIELDS = ["item_year", "season", "collection", "drop", "main_group", "subgroup"];
+
 frappe.ui.form.on("DC Dispatch Run", {
     setup(frm) {
-        frappe.call({
-            method: "dc_dispatch.dc_dispatch.doctype.dc_dispatch_run.dc_dispatch_run.get_eligible_item_fields",
-        }).then((response) => {
-            const rows = response.message || [];
-            frm._dc_dispatch_item_fields = rows;
-            const options = ["", ...rows.map((row) => row.fieldname)].join("\n");
-            frm.fields_dict.reference_fields.grid.update_docfield_property("fieldname", "options", options);
-            frm.fields_dict.item_filters.grid.update_docfield_property("fieldname", "options", options);
-        });
+        load_item_field_metadata(frm);
+        refresh_target_filter_options(frm);
     },
 
     refresh(frm) {
@@ -22,6 +21,7 @@ frappe.ui.form.on("DC Dispatch Run", {
             "minimum_match_percent",
             "reference_fields",
             "source_warehouse",
+            ...TARGET_FILTER_FIELDS,
             "item_filters",
             "items",
             "store_rules",
@@ -51,6 +51,25 @@ frappe.ui.form.on("DC Dispatch Run", {
             frm.add_custom_button(__("Create Material Requests"), () => confirm_and_run(frm, "create_material_requests", __("Create Material Requests from the approved quantities?")), __("Execute"));
         }
     },
+
+    item_year(frm) {
+        refresh_target_filter_options(frm);
+    },
+    season(frm) {
+        refresh_target_filter_options(frm);
+    },
+    collection(frm) {
+        refresh_target_filter_options(frm);
+    },
+    drop(frm) {
+        refresh_target_filter_options(frm);
+    },
+    main_group(frm) {
+        refresh_target_filter_options(frm);
+    },
+    subgroup(frm) {
+        refresh_target_filter_options(frm);
+    },
 });
 
 frappe.ui.form.on("DC Dispatch Reference Field", {
@@ -68,6 +87,66 @@ frappe.ui.form.on("DC Dispatch Item Filter", {
         if (field) frappe.model.set_value(cdt, cdn, "field_label", field.label);
     },
 });
+
+function load_item_field_metadata(frm) {
+    return frappe.call({method: ITEM_FIELD_METHOD}).then((response) => {
+        frm._dc_dispatch_item_fields = response.message || [];
+        apply_item_field_options(frm);
+    });
+}
+
+function apply_item_field_options(frm) {
+    const rows = frm._dc_dispatch_item_fields || [];
+    const standard = frm._dc_dispatch_standard_item_fields || new Set();
+    const reference_options = ["", ...rows.map((row) => row.fieldname)].join("\n");
+    const advanced_options = [
+        "",
+        ...rows.filter((row) => !standard.has(row.fieldname)).map((row) => row.fieldname),
+    ].join("\n");
+    frm.fields_dict.reference_fields.grid.update_docfield_property(
+        "fieldname",
+        "options",
+        reference_options
+    );
+    frm.fields_dict.item_filters.grid.update_docfield_property(
+        "fieldname",
+        "options",
+        advanced_options
+    );
+}
+
+function refresh_target_filter_options(frm) {
+    const request_id = (frm._dc_dispatch_filter_request_id || 0) + 1;
+    frm._dc_dispatch_filter_request_id = request_id;
+    return frappe.call({
+        method: TARGET_FILTER_METHOD,
+        args: Object.fromEntries(TARGET_FILTER_FIELDS.map((fieldname) => [fieldname, frm.doc[fieldname]])),
+    }).then((response) => {
+        if (request_id !== frm._dc_dispatch_filter_request_id) return;
+        const data = response.message || {};
+        const options_by_field = data.options || {};
+        frm._dc_dispatch_standard_item_fields = new Set(
+            Object.values(data.fieldnames || {}).filter((fieldname) => fieldname)
+        );
+        apply_item_field_options(frm);
+
+        TARGET_FILTER_FIELDS.forEach((fieldname) => {
+            const values = options_by_field[fieldname] || [];
+            const options = ["", ...values];
+            frm.set_df_property(fieldname, "options", options.join("\n"));
+            if (frm.doc[fieldname] && !options.includes(frm.doc[fieldname])) {
+                frm.set_value(fieldname, "");
+            }
+        });
+        const main_group_options = ["", ...(options_by_field.main_group || [])].join("\n");
+        frm.fields_dict.reference_fields.grid.update_docfield_property(
+            "main_group",
+            "options",
+            main_group_options
+        );
+        frm.refresh_fields(TARGET_FILTER_FIELDS);
+    });
+}
 
 function run_doc_action(frm, method, freeze_message) {
     return frm.save().then(() => frm.call({

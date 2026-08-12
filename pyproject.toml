@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "dc_dispatch"
-version = "0.1.0"
+version = "0.1.1"
 description = "Sales-informed initial DC dispatch planning for ERPNext"
 authors = [{ name = "Marina Trading Company" }]
 requires-python = ">=3.10"
@@ -25,4 +25,3 @@ target-version = "py310"
 [tool.bench.frappe-dependencies]
 frappe = ">=15.0.0,<16.0.0"
 erpnext = ">=15.0.0,<16.0.0"
-

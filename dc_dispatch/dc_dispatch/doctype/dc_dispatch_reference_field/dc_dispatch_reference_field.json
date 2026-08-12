@@ -7,7 +7,7 @@
   "engine": "InnoDB",
   "field_order": ["main_group", "fieldname", "field_label"],
   "fields": [
-    {"fieldname": "main_group", "fieldtype": "Data", "in_list_view": 1, "label": "Main Group", "reqd": 1},
+    {"description": "Loaded from Main Group values used by Item Templates.", "fieldname": "main_group", "fieldtype": "Select", "in_list_view": 1, "label": "Main Group", "reqd": 1},
     {"fieldname": "fieldname", "fieldtype": "Select", "in_list_view": 1, "label": "Matching Field", "reqd": 1},
     {"fieldname": "field_label", "fieldtype": "Data", "in_list_view": 1, "label": "Field Label", "read_only": 1}
   ],

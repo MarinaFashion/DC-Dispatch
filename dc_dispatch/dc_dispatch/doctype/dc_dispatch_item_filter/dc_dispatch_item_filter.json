@@ -10,7 +10,7 @@
     {"fieldname": "fieldname", "fieldtype": "Select", "in_list_view": 1, "label": "Item Field", "reqd": 1},
     {"fieldname": "field_label", "fieldtype": "Data", "label": "Field Label", "read_only": 1},
     {"default": "=", "fieldname": "operator", "fieldtype": "Select", "in_list_view": 1, "label": "Operator", "options": "=\n!=\nin\nnot in\nlike\nbetween", "reqd": 1},
-    {"description": "For 'in' use comma-separated values; for 'between' use two comma-separated values.", "fieldname": "value", "fieldtype": "Small Text", "in_list_view": 1, "label": "Value", "reqd": 1}
+    {"description": "Advanced use only. For 'in' use comma-separated values; for 'between' use two comma-separated values.", "fieldname": "value", "fieldtype": "Small Text", "in_list_view": 1, "label": "Value", "reqd": 1}
   ],
   "istable": 1,
   "links": [],

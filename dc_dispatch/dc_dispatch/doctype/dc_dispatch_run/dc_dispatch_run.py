@@ -137,3 +137,24 @@ def get_eligible_item_fields():
     from dc_dispatch.services.metadata import get_eligible_item_fields
 
     return get_eligible_item_fields()
+
+
+@frappe.whitelist()
+def get_target_filter_options(
+    item_year=None,
+    season=None,
+    collection=None,
+    drop=None,
+    main_group=None,
+    subgroup=None,
+):
+    from dc_dispatch.services.metadata import get_target_filter_options
+
+    return get_target_filter_options(
+        item_year=item_year,
+        season=season,
+        collection=collection,
+        drop=drop,
+        main_group=main_group,
+        subgroup=subgroup,
+    )

@@ -3,6 +3,8 @@ from __future__ import annotations
 import frappe
 from frappe import _
 
+from dc_dispatch.services.filtering import cascading_options
+
 
 ALLOWED_FIELDTYPES = {
     "Data",
@@ -36,6 +38,14 @@ EXCLUDED_ITEM_FIELDS = {
     "valuation_rate",
     "standard_rate",
     "last_purchase_rate",
+}
+
+
+STANDARD_TARGET_FILTER_FIELDS = {
+    "item_year": "item_year",
+    "season": "season",
+    "collection": "collection",
+    "drop": "custom_drop",
 }
 
 
@@ -74,3 +84,82 @@ def validate_configured_field(doctype: str, fieldname: str, allowed_fieldtypes: 
 
 def item_field_map():
     return {row["fieldname"]: row for row in get_eligible_item_fields()}
+
+
+def get_target_filter_options(
+    item_year=None,
+    season=None,
+    collection=None,
+    drop=None,
+    main_group=None,
+    subgroup=None,
+):
+    """Return mutually cascading options from values used by Item Templates.
+
+    One distinct-combination query is used for all controls.  This avoids the
+    repeated unindexed Item scans that would result from querying every Select
+    independently whenever a planner changes one filter.
+    """
+    settings = frappe.get_single("DC Dispatch Settings")
+    fieldnames = {
+        **STANDARD_TARGET_FILTER_FIELDS,
+        "main_group": settings.item_main_group_field,
+        "subgroup": settings.item_subgroup_field,
+    }
+    item_meta = frappe.get_meta("Item")
+    missing = sorted({
+        fieldname
+        for fieldname in fieldnames.values()
+        if fieldname and not item_meta.get_field(fieldname)
+    })
+    if missing:
+        frappe.throw(
+            _("These configured Item filter fields do not exist: {0}").format(", ".join(missing))
+        )
+
+    selections = {
+        "item_year": item_year,
+        "season": season,
+        "collection": collection,
+        "drop": drop,
+        "main_group": main_group,
+        "subgroup": subgroup,
+    }
+    query_fields = sorted({fieldname for fieldname in fieldnames.values() if fieldname})
+    rows = frappe.get_all(
+        "Item",
+        filters={"has_variants": 1, "disabled": 0},
+        fields=query_fields,
+        distinct=True,
+        order_by=f"{query_fields[0]} asc",
+        limit_page_length=0,
+    )
+
+    return {
+        "options": cascading_options(rows, selections, fieldnames),
+        "fieldnames": fieldnames,
+    }
+
+
+def standard_target_filters(run, settings=None):
+    """Map populated run controls to their real Item fieldnames."""
+    settings = settings or frappe.get_single("DC Dispatch Settings")
+    fieldnames = {
+        **STANDARD_TARGET_FILTER_FIELDS,
+        "main_group": settings.item_main_group_field,
+        "subgroup": settings.item_subgroup_field,
+    }
+    item_meta = frappe.get_meta("Item")
+    result = []
+    for run_fieldname, item_fieldname in fieldnames.items():
+        value = getattr(run, run_fieldname, None)
+        if not value:
+            continue
+        if not item_fieldname or not item_meta.get_field(item_fieldname):
+            frappe.throw(
+                _("Configured Item filter field {0} does not exist.").format(
+                    item_fieldname or run_fieldname
+                )
+            )
+        result.append((item_fieldname, value))
+    return result

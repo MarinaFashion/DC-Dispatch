@@ -17,7 +17,7 @@
     {"fieldname": "default_source_warehouse", "fieldtype": "Link", "label": "Default Source DC", "options": "Warehouse"},
     {"default": "80", "fieldname": "default_dispatch_percentage", "fieldtype": "Percent", "label": "Default Dispatch Percentage"},
     {"fieldname": "mapping_section", "fieldtype": "Section Break", "label": "Existing Custom Field Mapping"},
-    {"default": "custom_is_store_used_in_allocation", "description": "Fieldname on Warehouse whose checked value identifies eligible stores.", "fieldname": "warehouse_is_store_field", "fieldtype": "Data", "label": "Warehouse Is Store Field", "reqd": 1},
+    {"default": "custom_is_store", "description": "Fieldname on Warehouse whose checked value identifies eligible stores. Stock Allocation creates custom_is_store.", "fieldname": "warehouse_is_store_field", "fieldtype": "Data", "label": "Warehouse Is Store Field", "reqd": 1},
     {"default": "custom_transit_warehouse", "description": "Fieldname on Warehouse that links a store to its transit warehouse.", "fieldname": "warehouse_transit_field", "fieldtype": "Data", "label": "Warehouse Transit Field", "reqd": 1},
     {"fieldname": "column_break_mapping", "fieldtype": "Column Break"},
     {"default": "custom_item_main_group", "fieldname": "item_main_group_field", "fieldtype": "Data", "label": "Item Main Group Field", "reqd": 1},
@@ -45,4 +45,3 @@
   "sort_order": "DESC",
   "states": []
 }
-

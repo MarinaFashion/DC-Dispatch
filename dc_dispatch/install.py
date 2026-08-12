@@ -41,12 +41,13 @@ def after_install():
 
 def after_migrate():
     create_custom_fields(MATERIAL_REQUEST_FIELDS, update=True)
+    _seed_settings()
 
 
 def _seed_settings():
     settings = frappe.get_single("DC Dispatch Settings")
     defaults = {
-        "warehouse_is_store_field": "custom_is_store_used_in_allocation",
+        "warehouse_is_store_field": "custom_is_store",
         "warehouse_transit_field": "custom_transit_warehouse",
         "item_main_group_field": "custom_item_main_group",
         "item_subgroup_field": "custom_item_sub_group",
@@ -61,5 +62,14 @@ def _seed_settings():
         if not settings.get(fieldname):
             settings.set(fieldname, value)
             changed = True
+    legacy_is_store_field = "custom_is_store_used_in_allocation"
+    warehouse_meta = frappe.get_meta("Warehouse")
+    if (
+        settings.warehouse_is_store_field == legacy_is_store_field
+        and not warehouse_meta.get_field(legacy_is_store_field)
+        and warehouse_meta.get_field("custom_is_store")
+    ):
+        settings.warehouse_is_store_field = "custom_is_store"
+        changed = True
     if changed:
         settings.save(ignore_permissions=True)

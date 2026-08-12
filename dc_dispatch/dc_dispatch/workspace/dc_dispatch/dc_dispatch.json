@@ -1,6 +1,6 @@
 {
   "charts": [],
-  "content": "[{\"id\":\"header\",\"type\":\"header\",\"data\":{\"text\":\"<span class=\\\"h4\\\">DC Dispatch</span>\",\"col\":12}},{\"id\":\"new-run\",\"type\":\"shortcut\",\"data\":{\"shortcut_name\":\"New Initial Dispatch Run\",\"col\":4}},{\"id\":\"runs\",\"type\":\"shortcut\",\"data\":{\"shortcut_name\":\"Initial Dispatch Runs\",\"col\":4}},{\"id\":\"settings\",\"type\":\"shortcut\",\"data\":{\"shortcut_name\":\"DC Dispatch Settings\",\"col\":4}}]",
+  "content": "[{\"id\":\"dispatch-header\",\"type\":\"header\",\"data\":{\"text\":\"<span class=\\\"h4\\\">Dispatch Planning</span>\",\"col\":12}},{\"id\":\"new-run\",\"type\":\"shortcut\",\"data\":{\"shortcut_name\":\"New DC Dispatch Run\",\"col\":4}},{\"id\":\"runs\",\"type\":\"shortcut\",\"data\":{\"shortcut_name\":\"DC Dispatch Runs\",\"col\":4}},{\"id\":\"settings\",\"type\":\"shortcut\",\"data\":{\"shortcut_name\":\"DC Dispatch Settings\",\"col\":4}},{\"id\":\"review-header\",\"type\":\"header\",\"data\":{\"text\":\"<span class=\\\"h4\\\">Proposal Review and Audit</span>\",\"col\":12}},{\"id\":\"proposal-lines\",\"type\":\"shortcut\",\"data\":{\"shortcut_name\":\"Proposal Lines\",\"col\":4}},{\"id\":\"snapshots\",\"type\":\"shortcut\",\"data\":{\"shortcut_name\":\"Stock Snapshots\",\"col\":4}},{\"id\":\"material-requests\",\"type\":\"shortcut\",\"data\":{\"shortcut_name\":\"Material Requests\",\"col\":4}},{\"id\":\"master-header\",\"type\":\"header\",\"data\":{\"text\":\"<span class=\\\"h4\\\">Related Master Data</span>\",\"col\":12}},{\"id\":\"items\",\"type\":\"shortcut\",\"data\":{\"shortcut_name\":\"Items\",\"col\":4}},{\"id\":\"warehouses\",\"type\":\"shortcut\",\"data\":{\"shortcut_name\":\"Warehouses\",\"col\":4}}]",
   "creation": "2026-08-12 00:00:00.000000",
   "custom_blocks": [],
   "docstatus": 0,
@@ -23,14 +23,19 @@
   "quick_lists": [],
   "roles": [
     {"role": "Stock User"},
-    {"role": "Stock Manager"}
+    {"role": "Stock Manager"},
+    {"role": "System Manager"}
   ],
   "sequence_id": 40.0,
   "shortcuts": [
-    {"color": "Green", "doc_view": "New", "label": "New Initial Dispatch Run", "link_to": "DC Dispatch Run", "type": "DocType"},
-    {"color": "Blue", "doc_view": "List", "label": "Initial Dispatch Runs", "link_to": "DC Dispatch Run", "type": "DocType"},
-    {"color": "Grey", "doc_view": "Form", "label": "DC Dispatch Settings", "link_to": "DC Dispatch Settings", "type": "DocType"}
+    {"color": "Green", "doc_view": "New", "label": "New DC Dispatch Run", "link_to": "DC Dispatch Run", "type": "DocType"},
+    {"color": "Blue", "doc_view": "List", "label": "DC Dispatch Runs", "link_to": "DC Dispatch Run", "type": "DocType"},
+    {"color": "Grey", "doc_view": "Form", "label": "DC Dispatch Settings", "link_to": "DC Dispatch Settings", "type": "DocType"},
+    {"color": "Orange", "doc_view": "List", "label": "Proposal Lines", "link_to": "DC Dispatch Proposal Line", "type": "DocType"},
+    {"color": "Grey", "doc_view": "List", "label": "Stock Snapshots", "link_to": "DC Dispatch Stock Snapshot", "type": "DocType"},
+    {"color": "Green", "doc_view": "List", "label": "Material Requests", "link_to": "Material Request", "type": "DocType"},
+    {"color": "Blue", "doc_view": "List", "label": "Items", "link_to": "Item", "type": "DocType"},
+    {"color": "Blue", "doc_view": "List", "label": "Warehouses", "link_to": "Warehouse", "type": "DocType"}
   ],
   "title": "DC Dispatch"
 }
-

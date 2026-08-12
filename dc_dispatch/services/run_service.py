@@ -15,7 +15,12 @@ from dc_dispatch.services.allocation import (
     choose_related_set_stores,
     validate_related_sets,
 )
-from dc_dispatch.services.metadata import ALLOWED_FIELDTYPES, item_field_map, validate_configured_field
+from dc_dispatch.services.metadata import (
+    ALLOWED_FIELDTYPES,
+    item_field_map,
+    standard_target_filters,
+    validate_configured_field,
+)
 
 
 EDITABLE_STATUSES = {"Draft", "Items Loaded", "Reference Review Required", "Calculated", "Proposal Imported"}
@@ -81,7 +86,12 @@ def load_target_items(run):
     _require_editable(run)
     settings = _settings_and_validate()
     allowed_fields = item_field_map()
-    filters = [["Item", "disabled", "=", 0]]
+    filters = [
+        ["Item", "disabled", "=", 0],
+        ["Item", "has_variants", "=", 1],
+    ]
+    for fieldname, value in standard_target_filters(run, settings):
+        filters.append(["Item", fieldname, "=", value])
     for row in run.item_filters:
         if row.fieldname not in allowed_fields:
             frappe.throw(_("Item filter field {0} is not allowed.").format(row.fieldname))
@@ -754,6 +764,14 @@ def _calculation_input_hash(run):
         "sales_to_date": str(run.sales_to_date or ""),
         "minimum_match_percent": flt(run.minimum_match_percent),
         "source_warehouse": run.source_warehouse,
+        "target_filters": [
+            str(run.item_year or ""),
+            str(run.season or ""),
+            str(run.collection or ""),
+            str(run.drop or ""),
+            str(run.main_group or ""),
+            str(run.subgroup or ""),
+        ],
         "reference_fields": [
             [row.main_group, row.fieldname] for row in sorted(run.reference_fields, key=lambda value: value.idx)
         ],
