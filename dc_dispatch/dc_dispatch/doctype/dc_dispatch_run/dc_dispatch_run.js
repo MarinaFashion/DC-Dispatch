@@ -15,62 +15,53 @@ frappe.ui.form.on("DC Dispatch Run", {
         render_summary(frm);
         const can_approve = (frappe.user_roles || []).some((role) => ["Stock Manager", "System Manager"].includes(role));
         const editable = ["Draft", "Items Loaded", "Reference Review Required", "Calculated", "Proposal Imported"].includes(frm.doc.status);
+
         [
-            "company",
-            "sales_from_date",
-            "sales_to_date",
-            "minimum_match_percent",
-            "reference_fields",
-            "source_warehouse",
-            ...TARGET_FILTER_FIELDS,
-            "item_filters",
-            "items",
-            "store_rules",
+            "company", "sales_from_date", "sales_to_date", "minimum_match_percent",
+            "reference_fields", "source_warehouse", ...TARGET_FILTER_FIELDS,
+            "item_filters", "items", "store_rules",
         ].forEach((fieldname) => frm.set_df_property(fieldname, "read_only", editable ? 0 : 1));
 
         if (frm.is_new()) return;
 
         if (editable) {
-            frm.add_custom_button(__("Load Eligible Stores"), () => run_doc_action(frm, "load_eligible_stores", __("Loading stores")), __("Prepare"));
-            frm.add_custom_button(__("Load Target Items"), () => run_doc_action(frm, "load_target_items", __("Loading items")), __("Prepare"));
+            frm.add_custom_button(__("Load Eligible Stores"), () =>
+                run_doc_action(frm, "load_eligible_stores", __("Loading stores"), "store_rules", __("Eligible stores loaded")), __("Prepare"));
+            frm.add_custom_button(__("Load Target Items"), () =>
+                run_doc_action(frm, "load_target_items", __("Loading items"), "items", __("Target items loaded")), __("Prepare"));
             frm.add_custom_button(__("Check Store History"), () => check_store_history(frm), __("Prepare"));
-            frm.add_custom_button(__("Cancel Run"), () => confirm_and_run(frm, "cancel_run", __("Cancel this run? Its templates will become available for another initial dispatch run.")), __("Prepare"));
+            frm.add_custom_button(__("Cancel Run"), () =>
+                confirm_and_run(frm, "cancel_run", __("Cancel this run? Its templates will become available for another initial dispatch run.")), __("Prepare"));
         }
+
         if (["Items Loaded", "Reference Review Required", "Calculated", "Proposal Imported"].includes(frm.doc.status)) {
             frm.add_custom_button(__("Calculate Proposal"), () => calculate_after_history_check(frm), __("Proposal"));
         }
+
         if (["Calculated", "Proposal Imported"].includes(frm.doc.status)) {
             frm.add_custom_button(__("Export Excel"), () => {
                 open_url_post("/api/method/dc_dispatch.services.excel_service.download_proposal", {run_name: frm.doc.name});
             }, __("Proposal"));
-            frm.add_custom_button(__("Import Reviewed Excel"), () => run_doc_action(frm, "import_proposal", __("Validating workbook")), __("Proposal"));
+            frm.add_custom_button(__("Import Reviewed Excel"), () =>
+                run_doc_action(frm, "import_proposal", __("Validating workbook")), __("Proposal"));
             if (can_approve) {
-                frm.add_custom_button(__("Approve Proposal"), () => confirm_and_run(frm, "approve_proposal", __("Approve this proposal revision?")), __("Proposal"));
+                frm.add_custom_button(__("Approve Proposal"), () =>
+                    confirm_and_run(frm, "approve_proposal", __("Approve this proposal revision?")), __("Proposal"));
             }
         }
+
         if (can_approve && ["Approved", "Material Requests Created"].includes(frm.doc.status)) {
-            frm.add_custom_button(__("Create Material Requests"), () => confirm_and_run(frm, "create_material_requests", __("Create Material Requests from the approved quantities?")), __("Execute"));
+            frm.add_custom_button(__("Create Material Requests"), () =>
+                confirm_and_run(frm, "create_material_requests", __("Create Material Requests from the approved quantities?")), __("Execute"));
         }
     },
 
-    item_year(frm) {
-        reload_target_filters(frm);
-    },
-    season(frm) {
-        reload_target_filters(frm);
-    },
-    collection(frm) {
-        reload_target_filters(frm);
-    },
-    drop(frm) {
-        reload_target_filters(frm);
-    },
-    main_group(frm) {
-        reload_target_filters(frm);
-    },
-    subgroup(frm) {
-        reload_target_filters(frm);
-    },
+    item_year(frm) { reload_target_filters(frm); },
+    season(frm) { reload_target_filters(frm); },
+    collection(frm) { reload_target_filters(frm); },
+    drop(frm) { reload_target_filters(frm); },
+    main_group(frm) { reload_target_filters(frm); },
+    subgroup(frm) { reload_target_filters(frm); },
 });
 
 frappe.ui.form.on("DC Dispatch Reference Field", {
@@ -100,57 +91,40 @@ function apply_item_field_options(frm) {
     const rows = frm._dc_dispatch_item_fields || [];
     const standard = frm._dc_dispatch_standard_item_fields || new Set();
     const reference_options = ["", ...rows.map((row) => row.fieldname)].join("\n");
-    const advanced_options = [
-        "",
-        ...rows.filter((row) => !standard.has(row.fieldname)).map((row) => row.fieldname),
-    ].join("\n");
-    frm.fields_dict.reference_fields.grid.update_docfield_property(
-        "fieldname",
-        "options",
-        reference_options
-    );
-    frm.fields_dict.item_filters.grid.update_docfield_property(
-        "fieldname",
-        "options",
-        advanced_options
-    );
+    const advanced_options = ["", ...rows.filter((row) => !standard.has(row.fieldname)).map((row) => row.fieldname)].join("\n");
+
+    frm.fields_dict.reference_fields.grid.update_docfield_property("fieldname", "options", reference_options);
+    frm.fields_dict.item_filters.grid.update_docfield_property("fieldname", "options", advanced_options);
 }
 
 function refresh_target_filter_options(frm) {
     const request_id = (frm._dc_dispatch_filter_request_id || 0) + 1;
     frm._dc_dispatch_filter_request_id = request_id;
+
     return frappe.call({
         method: TARGET_FILTER_METHOD,
         args: Object.fromEntries(TARGET_FILTER_FIELDS.map((fieldname) => [fieldname, frm.doc[fieldname]])),
     }).then((response) => {
         if (request_id !== frm._dc_dispatch_filter_request_id) return;
+
         const data = response.message || {};
         const options_by_field = data.options || {};
         const configuration_errors = data.configuration_errors || [];
-        if (configuration_errors.length) {
-            show_filter_load_error(frm, configuration_errors.join("<br>"));
-        } else {
-            frm._dc_dispatch_filter_error_shown = false;
-        }
-        frm._dc_dispatch_standard_item_fields = new Set(
-            Object.values(data.fieldnames || {}).filter((fieldname) => fieldname)
-        );
+        if (configuration_errors.length) show_filter_load_error(frm, configuration_errors.join("<br>"));
+        else frm._dc_dispatch_filter_error_shown = false;
+
+        frm._dc_dispatch_standard_item_fields = new Set(Object.values(data.fieldnames || {}).filter(Boolean));
         apply_item_field_options(frm);
 
         TARGET_FILTER_FIELDS.forEach((fieldname) => {
             const values = options_by_field[fieldname] || [];
             const options = ["", ...values];
             frm.set_df_property(fieldname, "options", options.join("\n"));
-            if (frm.doc[fieldname] && !options.includes(frm.doc[fieldname])) {
-                frm.set_value(fieldname, "");
-            }
+            if (frm.doc[fieldname] && !options.includes(frm.doc[fieldname])) frm.set_value(fieldname, "");
         });
+
         const main_group_options = ["", ...(options_by_field.main_group || [])].join("\n");
-        frm.fields_dict.reference_fields.grid.update_docfield_property(
-            "main_group",
-            "options",
-            main_group_options
-        );
+        frm.fields_dict.reference_fields.grid.update_docfield_property("main_group", "options", main_group_options);
         frm.refresh_fields(TARGET_FILTER_FIELDS);
     });
 }
@@ -165,23 +139,40 @@ function show_filter_load_error(frm, error) {
     const message = typeof error === "string"
         ? error
         : __("Could not load Item filter options. Check DC Dispatch Settings and the Error Log.");
-    frappe.msgprint({
-        title: __("DC Dispatch Filter Configuration"),
-        message,
-        indicator: "red",
-    });
+    frappe.msgprint({title: __("DC Dispatch Filter Configuration"), message, indicator: "red"});
 }
 
-function run_doc_action(frm, method, freeze_message) {
-    return frm.save().then(() => frm.call({
-        method,
-        freeze: true,
-        freeze_message,
-    })).then((response) => {
-        frm.reload_doc();
-        if (response.message) frappe.show_alert({message: __("Action completed"), indicator: "green"});
+async function run_doc_action(frm, method, freeze_message, focus_field = null, success_label = null) {
+    await frm.save();
+    frappe.dom.freeze(freeze_message || __("Processing"));
+    try {
+        const response = await frm.call(method);
+        await frm.reload_doc();
+
+        let count = null;
+        if (response && response.message) {
+            if (typeof response.message.items === "number") count = response.message.items;
+            else if (typeof response.message.stores === "number") count = response.message.stores;
+        }
+
+        const label = success_label || __("Action completed");
+        frappe.show_alert({
+            message: count === null ? label : __("{0}: {1}", [label, count]),
+            indicator: "green",
+        });
+
+        if (focus_field && frm.fields_dict[focus_field]) {
+            setTimeout(() => {
+                const wrapper = frm.fields_dict[focus_field].$wrapper;
+                if (wrapper && wrapper.length) {
+                    $("html, body").animate({scrollTop: wrapper.offset().top - 140}, 250);
+                }
+            }, 200);
+        }
         return response;
-    });
+    } finally {
+        frappe.dom.unfreeze();
+    }
 }
 
 function confirm_and_run(frm, method, message) {
@@ -189,31 +180,29 @@ function confirm_and_run(frm, method, message) {
 }
 
 function check_store_history(frm, continue_callback) {
-    return frm.save().then(() => frm.call({
-        method: "analyze_store_history",
-        freeze: true,
-        freeze_message: __("Checking historical sales by store"),
-    })).then((response) => {
-        const data = response.message || {};
-        if ((data.no_history || []).length) {
-            show_no_history_dialog(frm, data, continue_callback);
-        } else {
-            frappe.show_alert({message: __("All included stores have historical data"), indicator: "green"});
-            frm.reload_doc().then(() => {
-                if (continue_callback) continue_callback();
-            });
-        }
-    });
+    return frm.save()
+        .then(() => frm.call("analyze_store_history"))
+        .then((response) => {
+            const data = response.message || {};
+            if ((data.no_history || []).length) {
+                show_no_history_dialog(frm, data, continue_callback);
+            } else {
+                frappe.show_alert({message: __("All included stores have historical data"), indicator: "green"});
+                frm.reload_doc().then(() => { if (continue_callback) continue_callback(); });
+            }
+        });
 }
 
 function calculate_after_history_check(frm) {
-    check_store_history(frm, () => run_doc_action(frm, "calculate_proposal", __("Calculating dispatch proposal")));
+    check_store_history(frm, () =>
+        run_doc_action(frm, "calculate_proposal", __("Calculating dispatch proposal")));
 }
 
 function show_no_history_dialog(frm, data, continue_callback) {
     const store_options = (frm.doc.store_rules || [])
         .filter((row) => row.history_status === "Has History")
         .map((row) => row.store_warehouse);
+
     const dialog = new frappe.ui.Dialog({
         title: __("Stores Without Historical Data"),
         size: "extra-large",
