@@ -2,45 +2,49 @@ import frappe
 from frappe.custom.doctype.custom_field.custom_field import create_custom_fields
 
 
-MATERIAL_REQUEST_FIELDS = {
-    "Material Request": [
-        {
-            "fieldname": "custom_dc_dispatch_run",
-            "label": "DC Dispatch Run",
-            "fieldtype": "Link",
-            "options": "DC Dispatch Run",
-            "insert_after": "material_request_type",
-            "read_only": 1,
-            "no_copy": 1,
-        },
-        {
-            "fieldname": "custom_final_store_warehouse",
-            "label": "Final Store Warehouse",
-            "fieldtype": "Link",
-            "options": "Warehouse",
-            "insert_after": "custom_dc_dispatch_run",
-            "read_only": 1,
-            "no_copy": 1,
-        },
-        {
-            "fieldname": "custom_dc_dispatch_instructions",
-            "label": "DC Dispatch Instructions",
-            "fieldtype": "Small Text",
-            "insert_after": "custom_final_store_warehouse",
-            "read_only": 1,
-            "no_copy": 1,
-        },
-    ]
+TRACE_FIELDS = [
+    {
+        "fieldname": "custom_dc_dispatch_run",
+        "label": "DC Dispatch Run",
+        "fieldtype": "Link",
+        "options": "DC Dispatch Run",
+        "insert_after": "material_request_type",
+        "read_only": 1,
+        "no_copy": 1,
+    },
+    {
+        "fieldname": "custom_final_store_warehouse",
+        "label": "Final Store Warehouse",
+        "fieldtype": "Link",
+        "options": "Warehouse",
+        "insert_after": "custom_dc_dispatch_run",
+        "read_only": 1,
+        "no_copy": 1,
+    },
+    {
+        "fieldname": "custom_dc_dispatch_instructions",
+        "label": "DC Dispatch Instructions",
+        "fieldtype": "Small Text",
+        "insert_after": "custom_final_store_warehouse",
+        "read_only": 1,
+        "no_copy": 1,
+    },
+]
+
+
+CUSTOM_FIELDS = {
+    "Material Request": TRACE_FIELDS,
+    "Stock Entry": TRACE_FIELDS,
 }
 
 
 def after_install():
-    create_custom_fields(MATERIAL_REQUEST_FIELDS, update=True)
+    create_custom_fields(CUSTOM_FIELDS, update=True)
     _seed_settings()
 
 
 def after_migrate():
-    create_custom_fields(MATERIAL_REQUEST_FIELDS, update=True)
+    create_custom_fields(CUSTOM_FIELDS, update=True)
     _seed_settings()
 
 
@@ -57,11 +61,13 @@ def _seed_settings():
         "minimum_cohort_units": 50,
         "minimum_cohort_stores": 5,
     }
+
     changed = False
     for fieldname, value in defaults.items():
         if not settings.get(fieldname):
             settings.set(fieldname, value)
             changed = True
+
     legacy_is_store_field = "custom_is_store_used_in_allocation"
     warehouse_meta = frappe.get_meta("Warehouse")
     if (
@@ -71,6 +77,7 @@ def _seed_settings():
     ):
         settings.warehouse_is_store_field = "custom_is_store"
         changed = True
+
     legacy_subgroup_field = "custom_item_sub_group"
     item_meta = frappe.get_meta("Item")
     if (
@@ -80,5 +87,6 @@ def _seed_settings():
     ):
         settings.item_subgroup_field = "item_sub_group"
         changed = True
+
     if changed:
         settings.save(ignore_permissions=True)
