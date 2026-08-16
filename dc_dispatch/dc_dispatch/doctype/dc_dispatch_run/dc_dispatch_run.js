@@ -42,6 +42,19 @@ frappe.ui.form.on("DC Dispatch Run", {
             }, __("Prepare"));
         }
 
+        if (
+            frm.doc.items && frm.doc.items.length &&
+            frm.doc.reference_fields && frm.doc.reference_fields.length &&
+            frm.doc.status !== "Cancelled"
+        ) {
+            frm.add_custom_button(__("Export Historical Evidence"), () => {
+                open_url_post(
+                    "/api/method/dc_dispatch.services.history_evidence_service.download_history_evidence",
+                    {run_name: frm.doc.name}
+                );
+            }, __("Proposal"));
+        }
+
         if (["Items Loaded", "Reference Review Required", "Calculated", "Proposal Imported"].includes(frm.doc.status)) {
             frm.add_custom_button(__("Calculate Proposal"), () =>
                 calculate_after_history_check(frm), __("Proposal"));
