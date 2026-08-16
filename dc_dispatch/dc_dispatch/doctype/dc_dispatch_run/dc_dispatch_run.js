@@ -25,58 +25,53 @@ frappe.ui.form.on("DC Dispatch Run", {
         if (frm.is_new()) return;
 
         if (editable) {
-            frm.add_custom_button(__("Load Eligible Stores"), async () => {
-                try {
-                    const response = await frm.call("load_eligible_stores");
-                    await frm.reload_doc();
-                    const count = response?.message?.stores;
-                    frappe.show_alert({
-                        message: typeof count === "number" ? __("Eligible stores loaded: {0}", [count]) : __("Eligible stores loaded"),
-                        indicator: "green",
-                    });
-                } catch (error) {
-                    console.error("DC Dispatch: Load Eligible Stores failed", error);
-                }
-            }, __("Prepare"));
+            frm.add_custom_button(__("Load Eligible Stores"), () =>
+                direct_doc_action(frm, "load_eligible_stores", __("Eligible stores loaded")), __("Prepare"));
 
-            frm.add_custom_button(__("Load Target Items"), async () => {
-                try {
-                    const response = await frm.call("load_target_items");
-                    await frm.reload_doc();
-                    const count = response?.message?.items;
-                    frappe.show_alert({
-                        message: typeof count === "number" ? __("Target items loaded: {0}", [count]) : __("Target items loaded"),
-                        indicator: "green",
-                    });
-                } catch (error) {
-                    console.error("DC Dispatch: Load Target Items failed", error);
-                }
-            }, __("Prepare"));
+            frm.add_custom_button(__("Load Target Items"), () =>
+                direct_doc_action(frm, "load_target_items", __("Target items loaded")), __("Prepare"));
 
-            frm.add_custom_button(__("Check Store History"), () => check_store_history(frm), __("Prepare"));
-            frm.add_custom_button(__("Cancel Run"), () =>
-                confirm_and_run(frm, "cancel_run", __("Cancel this run? Its templates will become available for another initial dispatch run.")), __("Prepare"));
+            frm.add_custom_button(__("Check Store History"), () =>
+                check_store_history(frm), __("Prepare"));
+
+            frm.add_custom_button(__("Cancel Run"), () => {
+                frappe.confirm(
+                    __("Cancel this run? Its templates will become available for another initial dispatch run."),
+                    () => direct_doc_action(frm, "cancel_run", __("Run cancelled"))
+                );
+            }, __("Prepare"));
         }
 
         if (["Items Loaded", "Reference Review Required", "Calculated", "Proposal Imported"].includes(frm.doc.status)) {
-            frm.add_custom_button(__("Calculate Proposal"), () => calculate_after_history_check(frm), __("Proposal"));
+            frm.add_custom_button(__("Calculate Proposal"), () =>
+                calculate_after_history_check(frm), __("Proposal"));
         }
 
         if (["Calculated", "Proposal Imported"].includes(frm.doc.status)) {
             frm.add_custom_button(__("Export Excel"), () => {
                 open_url_post("/api/method/dc_dispatch.services.excel_service.download_proposal", {run_name: frm.doc.name});
             }, __("Proposal"));
+
             frm.add_custom_button(__("Import Reviewed Excel"), () =>
-                run_doc_action(frm, "import_proposal", __("Validating workbook")), __("Proposal"));
+                direct_doc_action(frm, "import_proposal", __("Reviewed proposal imported")), __("Proposal"));
+
             if (can_approve) {
-                frm.add_custom_button(__("Approve Proposal"), () =>
-                    confirm_and_run(frm, "approve_proposal", __("Approve this proposal revision?")), __("Proposal"));
+                frm.add_custom_button(__("Approve Proposal"), () => {
+                    frappe.confirm(
+                        __("Approve this proposal revision?"),
+                        () => direct_doc_action(frm, "approve_proposal", __("Proposal approved"))
+                    );
+                }, __("Proposal"));
             }
         }
 
         if (can_approve && ["Approved", "Material Requests Created"].includes(frm.doc.status)) {
-            frm.add_custom_button(__("Create Material Requests"), () =>
-                confirm_and_run(frm, "create_material_requests", __("Create Material Requests from the approved quantities?")), __("Execute"));
+            frm.add_custom_button(__("Create Material Requests"), () => {
+                frappe.confirm(
+                    __("Create Material Requests from the approved quantities?"),
+                    () => direct_doc_action(frm, "create_material_requests", __("Material Requests processed"))
+                );
+            }, __("Execute"));
         }
     },
 
@@ -103,6 +98,21 @@ frappe.ui.form.on("DC Dispatch Item Filter", {
         if (field) frappe.model.set_value(cdt, cdn, "field_label", field.label);
     },
 });
+
+async function direct_doc_action(frm, method, success_message) {
+    try {
+        const response = await frm.call(method);
+        await frm.reload_doc();
+        frappe.show_alert({
+            message: success_message || __("Action completed"),
+            indicator: "green",
+        });
+        return response;
+    } catch (error) {
+        console.error(`DC Dispatch action failed: ${method}`, error);
+        throw error;
+    }
+}
 
 function load_item_field_metadata(frm) {
     return frappe.call({method: ITEM_FIELD_METHOD}).then((response) => {
@@ -154,65 +164,54 @@ function reload_target_filters(frm) {
 function show_filter_load_error(frm, error) {
     if (frm._dc_dispatch_filter_error_shown) return;
     frm._dc_dispatch_filter_error_shown = true;
-    const message = typeof error === "string" ? error : __("Could not load Item filter options. Check DC Dispatch Settings and the Error Log.");
+    const message = typeof error === "string"
+        ? error
+        : __("Could not load Item filter options. Check DC Dispatch Settings and the Error Log.");
     frappe.msgprint({title: __("DC Dispatch Filter Configuration"), message, indicator: "red"});
 }
 
-async function run_doc_action(frm, method, freeze_message, focus_field = null, success_label = null) {
-    await frm.save();
-    frappe.dom.freeze(freeze_message || __("Processing"));
-    try {
-        const response = await frm.call(method);
+function check_store_history(frm, continue_callback) {
+    return frm.call("analyze_store_history").then(async (response) => {
+        const data = response.message || {};
         await frm.reload_doc();
-        let count = null;
-        if (response && response.message) {
-            if (typeof response.message.items === "number") count = response.message.items;
-            else if (typeof response.message.stores === "number") count = response.message.stores;
-        }
-        const label = success_label || __("Action completed");
-        frappe.show_alert({message: count === null ? label : __("{0}: {1}", [label, count]), indicator: "green"});
-        if (focus_field && frm.fields_dict[focus_field]) {
-            setTimeout(() => {
-                const wrapper = frm.fields_dict[focus_field].$wrapper;
-                if (wrapper && wrapper.length) $("html, body").animate({scrollTop: wrapper.offset().top - 140}, 250);
-            }, 200);
+
+        if ((data.no_history || []).length) {
+            show_no_history_dialog(frm, data, continue_callback);
+        } else {
+            frappe.show_alert({message: __("All included stores have historical data"), indicator: "green"});
+            if (continue_callback) continue_callback();
         }
         return response;
-    } finally {
-        frappe.dom.unfreeze();
-    }
-}
-
-function confirm_and_run(frm, method, message) {
-    frappe.confirm(message, () => run_doc_action(frm, method, __("Processing")));
-}
-
-function check_store_history(frm, continue_callback) {
-    return frm.save()
-        .then(() => frm.call("analyze_store_history"))
-        .then((response) => {
-            const data = response.message || {};
-            if ((data.no_history || []).length) show_no_history_dialog(frm, data, continue_callback);
-            else {
-                frappe.show_alert({message: __("All included stores have historical data"), indicator: "green"});
-                frm.reload_doc().then(() => { if (continue_callback) continue_callback(); });
-            }
-        });
+    }).catch((error) => {
+        console.error("DC Dispatch: Check Store History failed", error);
+        throw error;
+    });
 }
 
 function calculate_after_history_check(frm) {
-    check_store_history(frm, () => run_doc_action(frm, "calculate_proposal", __("Calculating dispatch proposal")));
+    check_store_history(frm, () =>
+        direct_doc_action(frm, "calculate_proposal", __("Proposal calculated")));
 }
 
 function show_no_history_dialog(frm, data, continue_callback) {
-    const store_options = (frm.doc.store_rules || []).filter((row) => row.history_status === "Has History").map((row) => row.store_warehouse);
+    const store_options = (frm.doc.store_rules || [])
+        .filter((row) => row.history_status === "Has History")
+        .map((row) => row.store_warehouse);
+
     const dialog = new frappe.ui.Dialog({
         title: __("Stores Without Historical Data"),
         size: "extra-large",
         fields: [
-            {fieldname: "instructions", fieldtype: "HTML", options: `<p>${__("Choose whether each store should be excluded from this run or should copy the demand score of an established store. Shares will be recalculated to remain at 100%.")}</p>`},
             {
-                fieldname: "decisions", fieldtype: "Table", cannot_add_rows: true, in_place_edit: true,
+                fieldname: "instructions",
+                fieldtype: "HTML",
+                options: `<p>${__("Choose whether each store should be excluded from this run or should copy the demand score of an established store. Shares will be recalculated to remain at 100%.")}</p>`,
+            },
+            {
+                fieldname: "decisions",
+                fieldtype: "Table",
+                cannot_add_rows: true,
+                in_place_edit: true,
                 data: (data.no_history || []).map((store) => ({store_warehouse: store, decision: "Exclude"})),
                 fields: [
                     {fieldname: "store_warehouse", fieldtype: "Data", label: __("Store"), in_list_view: 1, read_only: 1, columns: 4},
@@ -226,20 +225,24 @@ function show_no_history_dialog(frm, data, continue_callback) {
             for (const decision of values.decisions || []) {
                 const row = (frm.doc.store_rules || []).find((value) => value.store_warehouse === decision.store_warehouse);
                 if (!row) continue;
+
                 if (decision.decision === "Use Reference Store" && !decision.reference_store) {
                     frappe.msgprint(__("Select a Reference Store for {0}.", [decision.store_warehouse]));
                     return;
                 }
+
                 frappe.model.set_value(row.doctype, row.name, "decision", decision.decision);
                 frappe.model.set_value(row.doctype, row.name, "reference_store", decision.reference_store || "");
             }
+
             dialog.hide();
-            frm.save().then(() => {
+            frm.save().then(async () => {
+                await frm.reload_doc();
                 if (continue_callback) continue_callback();
-                else frm.reload_doc();
             });
         },
     });
+
     dialog.show();
 }
 
