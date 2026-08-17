@@ -145,6 +145,27 @@ def _variant_room(
     }
 
 
+def _variant_depth_additions(
+    remaining_variant_budget: dict[str, int],
+    room_by_variant: dict[str, int],
+    budget: int,
+) -> dict[str, int]:
+    """Allocate a store depth budget using remaining DC size ratio, capped per size."""
+    weights = {
+        variant: max(0.0, float(quantity))
+        for variant, quantity in remaining_variant_budget.items()
+    }
+    caps = {
+        variant: max(0, int(room_by_variant.get(variant, 0)))
+        for variant in remaining_variant_budget
+    }
+    return allocate_integer_with_caps(
+        min(max(0, int(budget)), sum(caps.values())),
+        weights,
+        caps,
+    )
+
+
 def allocate_style(
     variant_stock: dict[str, float],
     target_total: int,
@@ -276,7 +297,11 @@ def allocate_style(
                 quantities,
                 remaining_variant_budget,
             )
-            additions = variant_dispatch_targets(room_by_variant, budget)
+            additions = _variant_depth_additions(
+                remaining_variant_budget,
+                room_by_variant,
+                budget,
+            )
             actual = 0
             for variant, quantity in additions.items():
                 if quantity <= 0:

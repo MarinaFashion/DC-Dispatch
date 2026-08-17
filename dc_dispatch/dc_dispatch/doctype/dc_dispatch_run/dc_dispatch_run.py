@@ -171,11 +171,23 @@ class DCDispatchRun(Document):
     @frappe.whitelist()
     def load_eligible_stores(self):
         from dc_dispatch.services.run_service import load_eligible_stores
+
+        # The store list is rebuilt by the service. Reset this flag so the
+        # validation hook reapplies priority-based Tier defaults to every
+        # newly/reintroduced store while still preserving planner overrides
+        # between normal saves.
+        self.tier_defaults_applied = 0
         return load_eligible_stores(self)
 
     @frappe.whitelist()
     def load_target_items(self):
         from dc_dispatch.services.run_service import load_target_items
+
+        # Advanced Item Filters were retired in v0.5.0. Clear legacy rows
+        # before the service constructs Item query filters so old saved rows
+        # cannot influence even the first Load Target Items action.
+        if getattr(self, "item_filters", None):
+            self.set("item_filters", [])
         return load_target_items(self)
 
     @frappe.whitelist()
