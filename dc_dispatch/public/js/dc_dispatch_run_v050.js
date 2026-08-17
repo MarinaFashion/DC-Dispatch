@@ -2,6 +2,8 @@ const DC_DISPATCH_DC_WAREHOUSE_QUERY =
     "dc_dispatch.services.tier_service.get_distribution_center_warehouses";
 const DC_DISPATCH_APPLY_TIER_RULES_METHOD =
     "dc_dispatch.services.tier_service.apply_tier_rules";
+const DC_DISPATCH_ARRANGE_NET_DEMAND_METHOD =
+    "dc_dispatch.services.net_demand_priority_service.arrange_stores_by_net_demand";
 
 frappe.ui.form.on("DC Dispatch Run", {
     setup(frm) {
@@ -41,6 +43,31 @@ frappe.ui.form.on("DC Dispatch Run", {
                 },
                 __("Prepare")
             );
+
+            if ((frm.doc.store_rules || []).length) {
+                frm.add_custom_button(
+                    __("Arrange by Net Demand"),
+                    () => {
+                        frappe.confirm(
+                            __(
+                                "Arrange all stores from highest to lowest historical Net Demand? " +
+                                "Net Demand is Gross Sales minus Same-Store Returns. " +
+                                "This resets Priority to 1, 2, 3... and reapplies Tier Rules, " +
+                                "replacing manual Priority/Tier overrides."
+                            ),
+                            () => {
+                                frappe.call({
+                                    method: DC_DISPATCH_ARRANGE_NET_DEMAND_METHOD,
+                                    args: { run_name: frm.doc.name },
+                                    freeze: true,
+                                    freeze_message: __("Calculating Net Demand and arranging stores..."),
+                                }).then(() => frm.reload_doc());
+                            }
+                        );
+                    },
+                    __("Prepare")
+                );
+            }
         }
     },
 });
