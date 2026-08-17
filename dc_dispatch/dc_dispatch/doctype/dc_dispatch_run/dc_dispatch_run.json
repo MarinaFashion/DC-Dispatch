@@ -34,6 +34,9 @@
     "item_filters",
     "loaded_items_section",
     "items",
+    "tier_configuration_section",
+    "tier_rules",
+    "tier_defaults_applied",
     "stores_section",
     "store_rules",
     "proposal_section",
@@ -72,7 +75,7 @@
       "in_list_view": 1,
       "in_standard_filter": 1,
       "label": "Status",
-      "options": "Draft\nItems Loaded\nReference Review Required\nCalculated\nProposal Imported\nApproved\nMaterial Requests Created\nCancelled",
+      "options": "Draft\\nItems Loaded\\nReference Review Required\\nCalculated\\nProposal Imported\\nApproved\\nMaterial Requests Created\\nCancelled",
       "read_only": 1
     },
     {
@@ -95,7 +98,7 @@
     {
       "fieldname": "reference_section",
       "fieldtype": "Section Break",
-      "label": "Block A \u2014 Historical Sales Reference and Criteria"
+      "label": "Block A — Historical Sales Reference and Criteria"
     },
     {
       "fieldname": "sales_from_date",
@@ -138,7 +141,7 @@
     {
       "fieldname": "items_section",
       "fieldtype": "Section Break",
-      "label": "Block B \u2014 Items to Dispatch"
+      "label": "Block B — Items to Dispatch"
     },
     {
       "fieldname": "source_warehouse",
@@ -196,12 +199,14 @@
     {
       "fieldname": "advanced_filters_section",
       "fieldtype": "Section Break",
-      "label": "Advanced Item Filters (Optional)"
+      "hidden": 1,
+      "label": "Advanced Item Filters (Retired)"
     },
     {
-      "description": "Use only for additional Item criteria not covered by the controlled filters above.",
+      "description": "Retained hidden for backward compatibility; v0.5.0 does not use Advanced Item Filters.",
       "fieldname": "item_filters",
       "fieldtype": "Table",
+      "hidden": 1,
       "label": "Advanced Item Filters",
       "options": "DC Dispatch Item Filter"
     },
@@ -215,6 +220,26 @@
       "fieldtype": "Table",
       "label": "Items to Dispatch",
       "options": "DC Dispatch Run Item"
+    },
+    {
+      "fieldname": "tier_configuration_section",
+      "fieldtype": "Section Break",
+      "label": "Tier Allocation Rules"
+    },
+    {
+      "description": "Priority ranges set the default Tier. Store Tier remains editable for planner override. Minimum and Maximum quantities apply independently to every size/variant.",
+      "fieldname": "tier_rules",
+      "fieldtype": "Table",
+      "label": "Tier Allocation Rules",
+      "options": "DC Dispatch Tier Rule"
+    },
+    {
+      "default": "0",
+      "fieldname": "tier_defaults_applied",
+      "fieldtype": "Check",
+      "hidden": 1,
+      "label": "Tier Defaults Applied",
+      "read_only": 1
     },
     {
       "fieldname": "stores_section",
@@ -264,7 +289,7 @@
       "link_fieldname": "run"
     }
   ],
-  "modified": "2026-08-17 00:00:00.000000",
+  "modified": "2026-08-18 00:00:00.000000",
   "modified_by": "Administrator",
   "module": "DC Dispatch",
   "name": "DC Dispatch Run",
