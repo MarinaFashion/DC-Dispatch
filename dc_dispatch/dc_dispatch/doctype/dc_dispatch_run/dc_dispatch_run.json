@@ -75,7 +75,7 @@
       "in_list_view": 1,
       "in_standard_filter": 1,
       "label": "Status",
-      "options": "Draft\\nItems Loaded\\nReference Review Required\\nCalculated\\nProposal Imported\\nApproved\\nMaterial Requests Created\\nCancelled",
+      "options": "Draft\nItems Loaded\nReference Review Required\nCalculated\nProposal Imported\nApproved\nMaterial Requests Created\nCancelled",
       "read_only": 1
     },
     {

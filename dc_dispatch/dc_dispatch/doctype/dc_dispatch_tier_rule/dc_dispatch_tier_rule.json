@@ -18,7 +18,7 @@
       "fieldtype": "Select",
       "in_list_view": 1,
       "label": "Tier",
-      "options": "A\\nB\\nC",
+      "options": "A\nB\nC",
       "reqd": 1
     },
     {

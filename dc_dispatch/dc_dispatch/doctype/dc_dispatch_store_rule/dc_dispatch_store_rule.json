@@ -39,7 +39,7 @@
       "fieldtype": "Select",
       "in_list_view": 1,
       "label": "No-History Decision",
-      "options": "Include\\nExclude\\nUse Reference Store",
+      "options": "Include\nExclude\nUse Reference Store",
       "reqd": 1
     },
     {
@@ -55,7 +55,7 @@
       "fieldtype": "Select",
       "in_list_view": 1,
       "label": "Tier",
-      "options": "A\\nB\\nC",
+      "options": "A\nB\nC",
       "reqd": 1
     },
     {
@@ -84,7 +84,7 @@
       "fieldname": "history_status",
       "fieldtype": "Select",
       "label": "History Status",
-      "options": "Pending\\nHas History\\nNo History\\nReference Store Missing",
+      "options": "Pending\nHas History\nNo History\nReference Store Missing",
       "read_only": 1
     }
   ],
