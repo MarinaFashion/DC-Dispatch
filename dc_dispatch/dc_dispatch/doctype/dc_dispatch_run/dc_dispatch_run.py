@@ -180,12 +180,16 @@ class DCDispatchRun(Document):
 
     @frappe.whitelist()
     def analyze_store_history(self):
-        from dc_dispatch.services.run_service import analyze_store_history
+        from dc_dispatch.services.history_policy_service import (
+            analyze_store_history,
+        )
         return analyze_store_history(self)
 
     @frappe.whitelist()
     def calculate_proposal(self):
-        from dc_dispatch.services.run_service import calculate_proposal
+        from dc_dispatch.services.history_policy_service import (
+            calculate_proposal,
+        )
         return calculate_proposal(self)
 
     @frappe.whitelist()
@@ -212,7 +216,6 @@ class DCDispatchRun(Document):
 
     @frappe.whitelist()
     def cancel_run(self):
-        # Draft/calculation stages can be cancelled directly.
         if self.status in {
             "Draft",
             "Items Loaded",
@@ -225,7 +228,6 @@ class DCDispatchRun(Document):
             self.save()
             return {"status": self.status}
 
-        # Once execution begins, downstream documents govern cancellation.
         if self.status in {"Approved", "Material Requests Created"}:
             material_requests = frappe.get_all(
                 "Material Request",

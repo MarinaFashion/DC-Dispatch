@@ -10,11 +10,15 @@ from openpyxl import Workbook
 from openpyxl.styles import Alignment, Font, PatternFill
 from openpyxl.utils import get_column_letter
 
+from dc_dispatch.services.history_policy_service import (
+    demand_historical_sales,
+    demand_sales_breakdown,
+    return_audit_rows,
+)
 from dc_dispatch.services.run_service import (
     _adjust_store_scores,
     _fields_by_main_group,
     _has_value,
-    _historical_sales,
     _item_values,
     _normal,
     _reference_fieldnames,
@@ -24,12 +28,6 @@ from dc_dispatch.services.run_service import (
 
 @frappe.whitelist()
 def download_history_evidence(run_name):
-    """Export the exact aggregated historical evidence used by DC Dispatch.
-
-    The workbook is an audit/reconciliation aid. It uses the same sales-period,
-    return/store treatment, matching threshold, included stores, and reference
-    store score substitution as proposal calculation.
-    """
     run = frappe.get_doc("DC Dispatch Run", run_name)
     run.check_permission("read")
     return export_history_evidence(run)
@@ -37,24 +35,31 @@ def download_history_evidence(run_name):
 
 def export_history_evidence(run):
     if not run.items:
-        frappe.throw(_("Load target items before exporting historical evidence."))
+        frappe.throw(
+            _("Load target items before exporting historical evidence.")
+        )
     if not run.reference_fields:
-        frappe.throw(_("Select historical matching fields before exporting historical evidence."))
+        frappe.throw(
+            _("Select historical matching fields before exporting historical evidence.")
+        )
     if not run.store_rules:
-        frappe.throw(_("Load eligible stores before exporting historical evidence."))
+        frappe.throw(
+            _("Load eligible stores before exporting historical evidence.")
+        )
 
-    # If the run already has a calculated revision, ensure this audit is for the
-    # same immutable criteria that generated that revision.
     if run.calculation_input_hash:
         assert_calculation_inputs_unchanged(run)
 
     settings = frappe.get_single("DC Dispatch Settings")
-    active_rules = [row for row in run.store_rules if row.decision != "Exclude"]
+    active_rules = [
+        row for row in run.store_rules if row.decision != "Exclude"
+    ]
     stores = [row.store_warehouse for row in active_rules]
     if not stores:
         frappe.throw(_("No included stores exist in this run."))
 
-    sales = _historical_sales(run, stores)
+    breakdown = demand_sales_breakdown(run, stores)
+    sales = demand_historical_sales(run, stores)
     candidate_templates = {template for template, _store in sales}
     target_templates = {row.item_template for row in run.items}
 
@@ -63,10 +68,12 @@ def export_history_evidence(run):
         settings.item_subgroup_field,
         settings.item_related_set_field,
     }
-    values = _item_values(candidate_templates | target_templates, value_fields)
+    values = _item_values(
+        candidate_templates | target_templates,
+        value_fields,
+    )
     fields_by_group = _fields_by_main_group(run)
     threshold = flt(run.minimum_match_percent)
-
     field_labels = _field_labels(value_fields)
     proposal_scores = _current_proposal_scores(run)
 
@@ -77,10 +84,15 @@ def export_history_evidence(run):
 
     for item_row in run.items:
         target_values = values.get(item_row.item_template, {})
-        group = target_values.get(settings.item_main_group_field) or item_row.main_group
+        group = (
+            target_values.get(settings.item_main_group_field)
+            or item_row.main_group
+        )
         selected_fields = fields_by_group.get(group, [])
         comparable_fields = [
-            field for field in selected_fields if _has_value(target_values.get(field))
+            field
+            for field in selected_fields
+            if _has_value(target_values.get(field))
         ]
 
         cohort = []
@@ -98,9 +110,12 @@ def export_history_evidence(run):
                     1
                     for field in comparable_fields
                     if _has_value(candidate_values.get(field))
-                    and _normal(candidate_values.get(field)) == _normal(target_values.get(field))
+                    and _normal(candidate_values.get(field))
+                    == _normal(target_values.get(field))
                 )
-                match_percent = matches * 100.0 / len(comparable_fields)
+                match_percent = (
+                    matches * 100.0 / len(comparable_fields)
+                )
 
             if match_percent < threshold:
                 continue
@@ -114,7 +129,8 @@ def export_history_evidence(run):
                 matched = (
                     comparable
                     and _has_value(historical_value)
-                    and _normal(historical_value) == _normal(target_value)
+                    and _normal(historical_value)
+                    == _normal(target_value)
                 )
                 details.append(
                     {
@@ -126,6 +142,7 @@ def export_history_evidence(run):
                         "matched": matched,
                     }
                 )
+
             match_details[candidate] = {
                 "match_percent": match_percent,
                 "details": details,
@@ -133,34 +150,43 @@ def export_history_evidence(run):
 
         raw_scores = defaultdict(float)
         cohort_set = set(cohort)
+
         for (template, store), quantity in sales.items():
             if template in cohort_set:
                 raw_scores[store] += quantity
-                if quantity:
-                    sales_rows.append(
-                        {
-                            "target": item_row.item_template,
-                            "historical": template,
-                            "store": store,
-                            "net_qty": flt(quantity),
-                        }
-                    )
 
-        raw_scores = {store: max(0, flt(quantity)) for store, quantity in raw_scores.items()}
-        adjusted_scores, missing_references = _adjust_store_scores(run, raw_scores)
-        adjusted_total = sum(max(0, flt(value)) for value in adjusted_scores.values())
+        raw_scores = {
+            store: max(0, quantity)
+            for store, quantity in raw_scores.items()
+        }
+        adjusted_scores, missing_references = _adjust_store_scores(
+            run,
+            raw_scores,
+        )
+        adjusted_total = sum(
+            max(0, flt(value))
+            for value in adjusted_scores.values()
+        )
 
         target_summaries.append(
             {
                 "target": item_row.item_template,
                 "main_group": item_row.main_group,
                 "subgroup": item_row.subgroup,
-                "selected_fields": ", ".join(field_labels.get(field, field) for field in selected_fields),
-                "comparable_fields": ", ".join(field_labels.get(field, field) for field in comparable_fields),
+                "selected_fields": ", ".join(
+                    field_labels.get(field, field)
+                    for field in selected_fields
+                ),
+                "comparable_fields": ", ".join(
+                    field_labels.get(field, field)
+                    for field in comparable_fields
+                ),
                 "threshold": threshold,
                 "cohort_templates": len(cohort),
                 "cohort_units": sum(raw_scores.values()),
-                "cohort_stores": sum(1 for value in raw_scores.values() if value > 0),
+                "cohort_stores": sum(
+                    1 for value in raw_scores.values() if value > 0
+                ),
                 "missing_references": ", ".join(missing_references),
             }
         )
@@ -172,8 +198,10 @@ def export_history_evidence(run):
                     "target": item_row.item_template,
                     "historical": candidate,
                     "match_percent": detail["match_percent"],
-                    "match_detail": _match_detail_text(detail["details"]),
-                    "historical_net_units": sum(
+                    "match_detail": _match_detail_text(
+                        detail["details"]
+                    ),
+                    "historical_demand_units": sum(
                         flt(quantity)
                         for (template, _store), quantity in sales.items()
                         if template == candidate
@@ -181,10 +209,35 @@ def export_history_evidence(run):
                 }
             )
 
-        rules_by_store = {row.store_warehouse: row for row in active_rules}
+            for store in stores:
+                components = breakdown.get(
+                    (candidate, store),
+                    {
+                        "gross_sales": 0,
+                        "same_store_returns": 0,
+                        "cross_store_returns_received": 0,
+                        "unlinked_returns_received": 0,
+                        "demand_qty": 0,
+                    },
+                )
+                if any(flt(value) for value in components.values()):
+                    sales_rows.append(
+                        {
+                            "target": item_row.item_template,
+                            "historical": candidate,
+                            "store": store,
+                            **components,
+                        }
+                    )
+
+        rules_by_store = {
+            row.store_warehouse: row for row in active_rules
+        }
         for store, rule in rules_by_store.items():
             raw = max(0, flt(raw_scores.get(store, 0)))
-            applied = max(0, flt(adjusted_scores.get(store, 0)))
+            applied = max(
+                0, flt(adjusted_scores.get(store, 0))
+            )
             score_rows.append(
                 {
                     "target": item_row.item_template,
@@ -193,8 +246,14 @@ def export_history_evidence(run):
                     "reference_store": rule.reference_store,
                     "raw_score": raw,
                     "applied_score": applied,
-                    "share_percent": applied * 100.0 / adjusted_total if adjusted_total else 0,
-                    "proposal_score": proposal_scores.get((item_row.item_template, store)),
+                    "share_percent": (
+                        applied * 100.0 / adjusted_total
+                        if adjusted_total
+                        else 0
+                    ),
+                    "proposal_score": proposal_scores.get(
+                        (item_row.item_template, store)
+                    ),
                 }
             )
 
@@ -203,10 +262,26 @@ def export_history_evidence(run):
     summary.title = "Run Summary"
     _write_run_summary(summary, run, active_rules)
 
-    _write_target_summary(workbook.create_sheet("Target Cohorts"), target_summaries)
-    _write_cohort_templates(workbook.create_sheet("Historical Templates"), cohort_rows)
-    _write_sales_used(workbook.create_sheet("Sales by Store"), sales_rows)
-    _write_score_reconciliation(workbook.create_sheet("Score Reconciliation"), score_rows)
+    _write_target_summary(
+        workbook.create_sheet("Target Cohorts"),
+        target_summaries,
+    )
+    _write_cohort_templates(
+        workbook.create_sheet("Historical Templates"),
+        cohort_rows,
+    )
+    _write_sales_used(
+        workbook.create_sheet("Sales by Store"),
+        sales_rows,
+    )
+    _write_score_reconciliation(
+        workbook.create_sheet("Score Reconciliation"),
+        score_rows,
+    )
+    _write_return_audit(
+        workbook.create_sheet("Return Audit"),
+        return_audit_rows(run, stores),
+    )
 
     output = BytesIO()
     workbook.save(output)
@@ -224,13 +299,19 @@ def export_history_evidence(run):
 def _current_proposal_scores(run):
     if not run.revision:
         return {}
+
     rows = frappe.get_all(
         "DC Dispatch Proposal Line",
         filters={"run": run.name, "revision": run.revision},
-        fields=["item_template", "store_warehouse", "sales_score"],
+        fields=[
+            "item_template",
+            "store_warehouse",
+            "sales_score",
+        ],
         order_by="item_template asc, store_warehouse asc",
         limit_page_length=0,
     )
+
     result = {}
     for row in rows:
         key = (row.item_template, row.store_warehouse)
@@ -246,7 +327,11 @@ def _field_labels(fieldnames):
         if not fieldname:
             continue
         field = meta.get_field(fieldname)
-        result[fieldname] = field.label if field and field.label else fieldname
+        result[fieldname] = (
+            field.label
+            if field and field.label
+            else fieldname
+        )
     return result
 
 
@@ -259,6 +344,7 @@ def _match_detail_text(details):
             result = "Match"
         else:
             result = "No match"
+
         parts.append(
             f'{detail["label"]}: target="{detail["target"] or ""}", '
             f'history="{detail["historical"] or ""}" [{result}]'
@@ -281,19 +367,25 @@ def _write_run_summary(sheet, run, active_rules):
         (
             "Matching Configuration",
             " ; ".join(
-                f"{row.main_group}: {row.field_label or row.fieldname}"
+                f"{row.main_group}: "
+                f"{row.field_label or row.fieldname}"
                 for row in run.reference_fields
             ),
         ),
         (
-            "Return Warehouse Rule",
-            "Linked returns use original Sales Invoice Item warehouse; otherwise return-line warehouse.",
+            "Demand Rule",
+            "Gross Sales - Same-Store Returns",
         ),
         (
-            "Evidence Granularity",
-            "Net units aggregated by historical Item Template and Store Warehouse.",
+            "Cross-Store Returns",
+            "Excluded from demand score; shown separately in Return Audit.",
+        ),
+        (
+            "Unlinked Returns",
+            "Excluded from demand score because original selling store cannot be proven.",
         ),
     ]
+
     sheet.append(["Parameter", "Value"])
     for row in rows:
         sheet.append(row)
@@ -309,11 +401,12 @@ def _write_target_summary(sheet, rows):
         "Comparable Target Fields",
         "Required Match %",
         "Matching Historical Templates",
-        "Cohort Net Units",
-        "Stores with Positive Cohort Sales",
+        "Cohort Demand Units",
+        "Stores with Positive Cohort Demand",
         "Reference Store Warning",
     ]
     sheet.append(headers)
+
     for row in rows:
         sheet.append(
             [
@@ -338,9 +431,10 @@ def _write_cohort_templates(sheet, rows):
         "Historical Item Template Used",
         "Actual Match %",
         "Match Detail",
-        "Historical Template Net Units in Selected Stores/Period",
+        "Historical Template Demand Units",
     ]
     sheet.append(headers)
+
     for row in rows:
         sheet.append(
             [
@@ -348,7 +442,7 @@ def _write_cohort_templates(sheet, rows):
                 row["historical"],
                 row["match_percent"],
                 row["match_detail"],
-                row["historical_net_units"],
+                row["historical_demand_units"],
             ]
         )
     _format_sheet(sheet, freeze="A2", auto_filter=True)
@@ -359,9 +453,14 @@ def _write_sales_used(sheet, rows):
         "Target Item Template",
         "Historical Item Template Used",
         "Store Warehouse",
-        "Net Units Used",
+        "Gross Sales Units",
+        "Same-Store Returns Deducted",
+        "Cross-Store Returns Received (Excluded)",
+        "Unlinked Returns Received (Excluded)",
+        "Demand Units Used",
     ]
     sheet.append(headers)
+
     for row in sorted(
         rows,
         key=lambda value: (
@@ -375,7 +474,11 @@ def _write_sales_used(sheet, rows):
                 row["target"],
                 row["historical"],
                 row["store"],
-                row["net_qty"],
+                row["gross_sales"],
+                row["same_store_returns"],
+                row["cross_store_returns_received"],
+                row["unlinked_returns_received"],
+                row["demand_qty"],
             ]
         )
     _format_sheet(sheet, freeze="A2", auto_filter=True)
@@ -387,21 +490,28 @@ def _write_score_reconciliation(sheet, rows):
         "Final Store",
         "Decision",
         "Reference Store",
-        "Raw Cohort Score at Final Store",
+        "Raw Demand Score at Final Store",
         "Applied Historical Demand Score",
         "Applied Store Share %",
         "Score Stored on Current Proposal",
         "Reconciles to Proposal",
     ]
     sheet.append(headers)
+
     for row in rows:
         proposal_score = row["proposal_score"]
         reconciles = (
             ""
             if proposal_score is None
-            else "Yes"
-            if abs(flt(proposal_score) - flt(row["applied_score"])) < 0.000001
-            else "No"
+            else (
+                "Yes"
+                if abs(
+                    flt(proposal_score)
+                    - flt(row["applied_score"])
+                )
+                < 0.000001
+                else "No"
+            )
         )
         sheet.append(
             [
@@ -419,20 +529,62 @@ def _write_score_reconciliation(sheet, rows):
     _format_sheet(sheet, freeze="A2", auto_filter=True)
 
 
+def _write_return_audit(sheet, rows):
+    headers = [
+        "Return Sales Invoice",
+        "Posting Date",
+        "Item Template",
+        "Item Code",
+        "Return Store Warehouse",
+        "Original Sales Invoice",
+        "Original Selling Warehouse",
+        "Return Qty",
+        "Classification / Demand Treatment",
+    ]
+    sheet.append(headers)
+
+    for row in rows:
+        sheet.append(
+            [
+                row.return_sales_invoice,
+                row.posting_date,
+                row.item_template,
+                row.item_code,
+                row.return_store_warehouse,
+                row.original_sales_invoice,
+                row.original_store_warehouse,
+                row.return_qty,
+                row.return_classification,
+            ]
+        )
+    _format_sheet(sheet, freeze="A2", auto_filter=True)
+
+
 def _format_sheet(sheet, freeze=None, auto_filter=False):
     header_fill = PatternFill("solid", fgColor="551C25")
     for cell in sheet[1]:
         cell.fill = header_fill
         cell.font = Font(color="FFFFFF", bold=True)
-        cell.alignment = Alignment(horizontal="center", vertical="center")
+        cell.alignment = Alignment(
+            horizontal="center",
+            vertical="center",
+        )
 
     for column in range(1, sheet.max_column + 1):
         width = 12
         for cell in sheet[get_column_letter(column)]:
-            width = min(70, max(width, len(str(cell.value or "")) + 2))
+            width = min(
+                70,
+                max(width, len(str(cell.value or "")) + 2),
+            )
             if cell.row > 1:
-                cell.alignment = Alignment(vertical="top", wrap_text=True)
-        sheet.column_dimensions[get_column_letter(column)].width = width
+                cell.alignment = Alignment(
+                    vertical="top",
+                    wrap_text=True,
+                )
+        sheet.column_dimensions[
+            get_column_letter(column)
+        ].width = width
 
     if freeze:
         sheet.freeze_panes = freeze
