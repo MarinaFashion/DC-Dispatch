@@ -15,6 +15,8 @@ class StoreInput:
     tier: str = "B"
     priority: int = 0
     minimum_per_variant: int = 1
+    # Fieldname retained for backward compatibility with existing DocType data.
+    # In v0.5.0 this is a per-variant/size maximum, not a style-total maximum.
     maximum_per_style: int = 0
 
 
@@ -24,8 +26,6 @@ class StyleAllocation:
     variant_targets: dict[str, int]
     unallocated: dict[str, int]
     skipped_stores: list[str]
-    # Store-level depth budgets are exposed for audit/testing. The calling
-    # service does not need to persist them to remain backward compatible.
     depth_targets: dict[str, int] = field(default_factory=dict)
 
 
@@ -110,7 +110,6 @@ def variant_dispatch_targets(
 
 
 def _minimum_bundle_order(store: StoreInput):
-    # Planner tier/priority remains authoritative for the launch display bundle.
     return (
         TIER_ORDER.get(store.tier, 99),
         int(store.priority or 0),
@@ -120,14 +119,50 @@ def _minimum_bundle_order(store: StoreInput):
 
 
 def _depth_order(store: StoreInput):
-    # After the display range is secured, historical reference performance is the
-    # first commercial signal inside the same tier; manual priority remains the
-    # deterministic operational tie-breaker.
     return (
         TIER_ORDER.get(store.tier, 99),
         -float(store.score or 0),
         int(store.priority or 0),
         store.warehouse,
+    )
+
+
+def _variant_room(
+    store: StoreInput,
+    quantities: dict[str, dict[str, int]],
+    remaining_variant_budget: dict[str, int],
+) -> dict[str, int]:
+    maximum = max(0, int(store.maximum_per_style))
+    if maximum == 0:
+        return dict(remaining_variant_budget)
+
+    return {
+        variant: min(
+            remaining_variant_budget[variant],
+            max(0, maximum - quantities[store.warehouse][variant]),
+        )
+        for variant in remaining_variant_budget
+    }
+
+
+def _variant_depth_additions(
+    remaining_variant_budget: dict[str, int],
+    room_by_variant: dict[str, int],
+    budget: int,
+) -> dict[str, int]:
+    """Allocate a store depth budget using remaining DC size ratio, capped per size."""
+    weights = {
+        variant: max(0.0, float(quantity))
+        for variant, quantity in remaining_variant_budget.items()
+    }
+    caps = {
+        variant: max(0, int(room_by_variant.get(variant, 0)))
+        for variant in remaining_variant_budget
+    }
+    return allocate_integer_with_caps(
+        min(max(0, int(budget)), sum(caps.values())),
+        weights,
+        caps,
     )
 
 
@@ -139,17 +174,12 @@ def allocate_style(
 ) -> StyleAllocation:
     """Allocate one single-color template across stores; variants are sizes only.
 
-    Release 0.2 changes the *depth* phase from variant-first spreading to a
-    store-first allocation:
-
-    1. Complete minimum display bundles are established first.
-    2. The remaining style budget is converted into justified store-level depth
-       budgets using historical demand scores and store caps.
-    3. Stores are then completed one by one in commercial order, with each
-       store's depth following the remaining DC size ratio.
-
-    This preserves historical demand shares while avoiding fragmented size-depth
-    decisions caused by allocating every size independently.
+    v0.5.0 rules:
+    1. Minimum display quantity applies to every available size.
+    2. Maximum quantity applies independently to every size (0 = unlimited).
+    3. Tier/priority controls minimum-bundle order.
+    4. Remaining depth follows historical demand and is redistributed when a
+       store/size reaches its maximum.
     """
     stores = [
         store
@@ -174,8 +204,7 @@ def allocate_style(
     skipped: list[str] = []
     remainder_eligible: set[str] = set()
 
-    # Phase 1: Complete fashion display range before depth.
-    # A store receives every available size at its configured minimum or zero.
+    # Phase 1: establish complete minimum size bundles.
     for store in bundle_order:
         minimum = max(0, int(store.minimum_per_variant))
         bundle_total = minimum * len(physical_stock)
@@ -192,7 +221,8 @@ def allocate_style(
                 for variant in physical_stock
             )
         )
-        cap_allows = not maximum or maximum >= bundle_total
+        # Maximum is per size: every size must be allowed to reach minimum.
+        cap_allows = maximum == 0 or maximum >= minimum
 
         if not can_cover or not cap_allows:
             skipped.append(store.warehouse)
@@ -205,7 +235,6 @@ def allocate_style(
 
         remainder_eligible.add(store.warehouse)
 
-    # The actual remaining stock ratio determines the remaining size budget.
     remaining_variant_budget = variant_dispatch_targets(
         remaining_stock,
         remaining_total,
@@ -221,8 +250,6 @@ def allocate_style(
         for variant in physical_stock
     }
 
-    # Phase 2: first establish a justified total depth budget per store.
-    # This retains reference-sales proportionality and style maximums.
     depth_candidates = [
         store
         for store in stores
@@ -231,43 +258,63 @@ def allocate_style(
             and float(store.score or 0) > 0
         )
     ]
-    depth_caps: dict[str, int] = {}
-    depth_weights: dict[str, float] = {}
+    depth_targets = {store.warehouse: 0 for store in depth_candidates}
 
-    remaining_depth_total = sum(remaining_variant_budget.values())
-    for store in depth_candidates:
-        already = sum(quantities[store.warehouse].values())
-        maximum = max(0, int(store.maximum_per_style))
-        room = (
-            remaining_depth_total
-            if maximum == 0
-            else max(0, maximum - already)
+    # Allocate in rounds. If a store hits a per-size cap, the unused depth is
+    # reconsidered for other stores rather than silently remaining stranded.
+    while sum(remaining_variant_budget.values()) > 0:
+        depth_caps = {}
+        depth_weights = {}
+        for store in depth_candidates:
+            room_by_variant = _variant_room(
+                store,
+                quantities,
+                remaining_variant_budget,
+            )
+            room = sum(room_by_variant.values())
+            if room > 0:
+                depth_caps[store.warehouse] = room
+                depth_weights[store.warehouse] = max(0.0, float(store.score))
+
+        if not depth_caps:
+            break
+
+        round_total = sum(remaining_variant_budget.values())
+        round_targets = allocate_integer_with_caps(
+            round_total,
+            depth_weights,
+            depth_caps,
         )
-        depth_caps[store.warehouse] = room
-        depth_weights[store.warehouse] = max(0.0, float(store.score))
 
-    depth_targets = allocate_integer_with_caps(
-        remaining_depth_total,
-        depth_weights,
-        depth_caps,
-    )
-
-    # Phase 3: fulfill each store's justified depth as a coherent store block.
-    # Within each store, sizes follow the *remaining* DC size ratio.
-    for store in sorted(depth_candidates, key=_depth_order):
-        budget = int(depth_targets.get(store.warehouse, 0))
-        if budget <= 0:
-            continue
-
-        additions = variant_dispatch_targets(
-            remaining_variant_budget,
-            budget,
-        )
-        for variant, quantity in additions.items():
-            if quantity <= 0:
+        progress = 0
+        for store in sorted(depth_candidates, key=_depth_order):
+            budget = int(round_targets.get(store.warehouse, 0))
+            if budget <= 0:
                 continue
-            quantities[store.warehouse][variant] += quantity
-            remaining_variant_budget[variant] -= quantity
+
+            room_by_variant = _variant_room(
+                store,
+                quantities,
+                remaining_variant_budget,
+            )
+            additions = _variant_depth_additions(
+                remaining_variant_budget,
+                room_by_variant,
+                budget,
+            )
+            actual = 0
+            for variant, quantity in additions.items():
+                if quantity <= 0:
+                    continue
+                quantities[store.warehouse][variant] += quantity
+                remaining_variant_budget[variant] -= quantity
+                actual += quantity
+
+            depth_targets[store.warehouse] += actual
+            progress += actual
+
+        if progress <= 0:
+            break
 
     return StyleAllocation(
         quantities=quantities,
@@ -320,7 +367,7 @@ def choose_related_set_stores(
         for member, stock in remaining_stock.items():
             bundle_total = minimum * len(stock)
             if (
-                (cap and cap < bundle_total)
+                (cap and cap < minimum)
                 or remaining_total[member] < bundle_total
                 or any(quantity < minimum for quantity in stock.values())
             ):

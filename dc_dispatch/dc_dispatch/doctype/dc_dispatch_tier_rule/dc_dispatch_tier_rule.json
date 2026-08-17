@@ -1,0 +1,68 @@
+{
+  "actions": [],
+  "allow_rename": 0,
+  "creation": "2026-08-18 00:00:00.000000",
+  "doctype": "DocType",
+  "editable_grid": 1,
+  "engine": "InnoDB",
+  "field_order": [
+    "tier",
+    "priority_from",
+    "priority_to",
+    "minimum_per_variant",
+    "maximum_per_variant"
+  ],
+  "fields": [
+    {
+      "fieldname": "tier",
+      "fieldtype": "Select",
+      "in_list_view": 1,
+      "label": "Tier",
+      "options": "A\nB\nC",
+      "reqd": 1
+    },
+    {
+      "fieldname": "priority_from",
+      "fieldtype": "Int",
+      "in_list_view": 1,
+      "label": "Priority From",
+      "reqd": 1
+    },
+    {
+      "fieldname": "priority_to",
+      "fieldtype": "Int",
+      "in_list_view": 1,
+      "label": "Priority To",
+      "reqd": 1
+    },
+    {
+      "default": "1",
+      "description": "Minimum quantity for each available size/variant.",
+      "fieldname": "minimum_per_variant",
+      "fieldtype": "Int",
+      "in_list_view": 1,
+      "label": "Minimum Qty per Size",
+      "reqd": 1
+    },
+    {
+      "default": "0",
+      "description": "Maximum quantity for each size/variant. Zero means unlimited.",
+      "fieldname": "maximum_per_variant",
+      "fieldtype": "Int",
+      "in_list_view": 1,
+      "label": "Maximum Qty per Size",
+      "reqd": 1
+    }
+  ],
+  "istable": 1,
+  "links": [],
+  "modified": "2026-08-18 00:00:00.000000",
+  "modified_by": "Administrator",
+  "module": "DC Dispatch",
+  "name": "DC Dispatch Tier Rule",
+  "owner": "Administrator",
+  "permissions": [],
+  "sort_field": "modified",
+  "sort_order": "DESC",
+  "states": []
+}
