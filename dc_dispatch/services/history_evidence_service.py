@@ -13,6 +13,10 @@ from openpyxl.utils import get_column_letter
 from dc_dispatch.services.history_policy_service import (
     demand_historical_sales,
     demand_sales_breakdown,
+    historical_filter_fieldnames,
+    historical_filter_rows,
+    historical_scope_candidates,
+    historical_scope_text,
     return_audit_rows,
 )
 from dc_dispatch.services.run_service import (
@@ -63,7 +67,7 @@ def export_history_evidence(run):
     candidate_templates = {template for template, _store in sales}
     target_templates = {row.item_template for row in run.items}
 
-    value_fields = _reference_fieldnames(run) | {
+    value_fields = _reference_fieldnames(run) | historical_filter_fieldnames(run) | {
         settings.item_main_group_field,
         settings.item_subgroup_field,
         settings.item_related_set_field,
@@ -95,10 +99,22 @@ def export_history_evidence(run):
             if _has_value(target_values.get(field))
         ]
 
+        scoped_templates = historical_scope_candidates(
+            run,
+            item_row,
+            candidate_templates,
+            values,
+        )
+        scoped_sales = {
+            key: qty
+            for key, qty in sales.items()
+            if key[0] in scoped_templates
+        }
+
         cohort = []
         match_details = {}
 
-        for candidate in sorted(candidate_templates):
+        for candidate in sorted(scoped_templates):
             candidate_values = values.get(candidate, {})
             if candidate_values.get(settings.item_main_group_field) != group:
                 continue
@@ -151,7 +167,7 @@ def export_history_evidence(run):
         raw_scores = defaultdict(float)
         cohort_set = set(cohort)
 
-        for (template, store), quantity in sales.items():
+        for (template, store), quantity in scoped_sales.items():
             if template in cohort_set:
                 raw_scores[store] += quantity
 
@@ -173,6 +189,10 @@ def export_history_evidence(run):
                 "target": item_row.item_template,
                 "main_group": item_row.main_group,
                 "subgroup": item_row.subgroup,
+                "historical_scope": historical_scope_text(
+                    run, item_row.main_group, field_labels
+                ),
+                "scope_templates": len(scoped_templates),
                 "selected_fields": ", ".join(
                     field_labels.get(field, field)
                     for field in selected_fields
@@ -203,7 +223,7 @@ def export_history_evidence(run):
                     ),
                     "historical_demand_units": sum(
                         flt(quantity)
-                        for (template, _store), quantity in sales.items()
+                        for (template, _store), quantity in scoped_sales.items()
                         if template == candidate
                     ),
                 }
@@ -260,8 +280,13 @@ def export_history_evidence(run):
     workbook = Workbook()
     summary = workbook.active
     summary.title = "Run Summary"
-    _write_run_summary(summary, run, active_rules)
+    _write_run_summary(summary, run, active_rules, field_labels)
 
+    _write_historical_scope_filters(
+        workbook.create_sheet("Historical Scope Filters"),
+        run,
+        field_labels,
+    )
     _write_target_summary(
         workbook.create_sheet("Target Cohorts"),
         target_summaries,
@@ -352,7 +377,16 @@ def _match_detail_text(details):
     return " | ".join(parts)
 
 
-def _write_run_summary(sheet, run, active_rules):
+def _write_run_summary(sheet, run, active_rules, field_labels):
+    matching_configuration = " ; ".join(
+        f"{row.main_group}: {row.field_label or row.fieldname}"
+        for row in run.reference_fields
+    )
+    historical_scope_summary = " ; ".join(
+        historical_scope_text(run, row.main_group, field_labels)
+        for row in run.items
+    ) if run.items else historical_scope_text(run, None, field_labels)
+
     rows = [
         ("DC Dispatch Run", run.name),
         ("Revision", run.revision or 0),
@@ -364,26 +398,11 @@ def _write_run_summary(sheet, run, active_rules):
         ("Minimum Field Match %", run.minimum_match_percent),
         ("Target Styles", len(run.items)),
         ("Included Stores", len(active_rules)),
-        (
-            "Matching Configuration",
-            " ; ".join(
-                f"{row.main_group}: "
-                f"{row.field_label or row.fieldname}"
-                for row in run.reference_fields
-            ),
-        ),
-        (
-            "Demand Rule",
-            "Gross Sales - Same-Store Returns",
-        ),
-        (
-            "Cross-Store Returns",
-            "Excluded from demand score; shown separately in Return Audit.",
-        ),
-        (
-            "Unlinked Returns",
-            "Excluded from demand score because original selling store cannot be proven.",
-        ),
+        ("Matching Configuration", matching_configuration),
+        ("Historical Reference Filters", historical_scope_summary),
+        ("Demand Rule", "Gross Sales - Same-Store Returns"),
+        ("Cross-Store Returns", "Excluded from demand score; shown separately in Return Audit."),
+        ("Unlinked Returns", "Excluded from demand score because original selling store cannot be proven."),
     ]
 
     sheet.append(["Parameter", "Value"])
@@ -392,11 +411,32 @@ def _write_run_summary(sheet, run, active_rules):
     _format_sheet(sheet, freeze="A2", auto_filter=True)
 
 
+def _write_historical_scope_filters(sheet, run, field_labels):
+    sheet.append(["Main Group", "Historical Item Field", "Field Label", "Operator", "Value", "Applies To"])
+    rows = historical_filter_rows(run)
+    if not rows:
+        sheet.append(["", "", "", "", "", "All historical items in the sales date range"])
+    else:
+        for row in rows:
+            applies_to = row.main_group or "All Main Groups"
+            sheet.append([
+                row.main_group,
+                row.fieldname,
+                field_labels.get(row.fieldname, row.field_label or row.fieldname),
+                row.operator,
+                row.value,
+                applies_to,
+            ])
+    _format_sheet(sheet, freeze="A2", auto_filter=True)
+
+
 def _write_target_summary(sheet, rows):
     headers = [
         "Target Item Template",
         "Main Group",
         "Subgroup",
+        "Historical Reference Scope Applied",
+        "Historical Templates Passing Scope",
         "Selected Matching Fields",
         "Comparable Target Fields",
         "Required Match %",
@@ -413,6 +453,8 @@ def _write_target_summary(sheet, rows):
                 row["target"],
                 row["main_group"],
                 row["subgroup"],
+                row["historical_scope"],
+                row["scope_templates"],
                 row["selected_fields"],
                 row["comparable_fields"],
                 row["threshold"],

@@ -6,72 +6,334 @@
   "doctype": "DocType",
   "engine": "InnoDB",
   "field_order": [
-    "identity_section", "naming_series", "company", "status", "column_break_identity", "revision", "calculated_at",
-    "reference_section", "sales_from_date", "sales_to_date", "minimum_match_percent", "reference_fields",
-    "items_section", "source_warehouse",
-    "target_filters_section", "item_year", "season", "main_group", "column_break_target_filters", "collection", "drop", "subgroup",
-    "advanced_filters_section", "item_filters", "loaded_items_section", "items",
-    "stores_section", "store_rules",
-    "proposal_section", "proposal_file", "proposal_summary", "stock_snapshot_hash", "calculation_input_hash"
+    "identity_section",
+    "naming_series",
+    "company",
+    "status",
+    "column_break_identity",
+    "revision",
+    "calculated_at",
+    "reference_section",
+    "sales_from_date",
+    "sales_to_date",
+    "minimum_match_percent",
+    "reference_fields",
+    "historical_scope_section",
+    "historical_reference_filters",
+    "items_section",
+    "source_warehouse",
+    "target_filters_section",
+    "item_year",
+    "season",
+    "main_group",
+    "column_break_target_filters",
+    "collection",
+    "drop",
+    "subgroup",
+    "advanced_filters_section",
+    "item_filters",
+    "loaded_items_section",
+    "items",
+    "stores_section",
+    "store_rules",
+    "proposal_section",
+    "proposal_file",
+    "proposal_summary",
+    "stock_snapshot_hash",
+    "calculation_input_hash"
   ],
   "fields": [
-    {"fieldname": "identity_section", "fieldtype": "Section Break", "label": "Initial Dispatch Run"},
-    {"default": "DCD-.YYYY.-.#####", "fieldname": "naming_series", "fieldtype": "Select", "label": "Series", "options": "DCD-.YYYY.-.#####", "reqd": 1},
-    {"fieldname": "company", "fieldtype": "Link", "in_list_view": 1, "in_standard_filter": 1, "label": "Company", "options": "Company", "reqd": 1},
-    {"default": "Draft", "fieldname": "status", "fieldtype": "Select", "in_list_view": 1, "in_standard_filter": 1, "label": "Status", "options": "Draft\nItems Loaded\nReference Review Required\nCalculated\nProposal Imported\nApproved\nMaterial Requests Created\nCancelled", "read_only": 1},
-    {"fieldname": "column_break_identity", "fieldtype": "Column Break"},
-    {"default": "0", "fieldname": "revision", "fieldtype": "Int", "label": "Proposal Revision", "read_only": 1},
-    {"fieldname": "calculated_at", "fieldtype": "Datetime", "label": "Calculated At", "read_only": 1},
-    {"fieldname": "reference_section", "fieldtype": "Section Break", "label": "Block A — Historical Sales Reference and Criteria"},
-    {"fieldname": "sales_from_date", "fieldtype": "Date", "label": "Sales From Date", "reqd": 1},
-    {"fieldname": "sales_to_date", "fieldtype": "Date", "label": "Sales To Date", "reqd": 1},
-    {"default": "100", "description": "A historical template must match at least this percentage of the selected, nonblank fields for its Main Group.", "fieldname": "minimum_match_percent", "fieldtype": "Percent", "label": "Minimum Field Match %", "reqd": 1},
-    {"fieldname": "reference_fields", "fieldtype": "Table", "label": "Matching Fields by Main Group", "options": "DC Dispatch Reference Field"},
-    {"fieldname": "items_section", "fieldtype": "Section Break", "label": "Block B — Items to Dispatch"},
-    {"fieldname": "source_warehouse", "fieldtype": "Link", "in_standard_filter": 1, "label": "Source DC Warehouse", "options": "Warehouse", "reqd": 1},
-    {"fieldname": "target_filters_section", "fieldtype": "Section Break", "label": "Target Item Filters"},
-    {"description": "Loaded from Item Templates and narrowed by the other selected filters.", "fieldname": "item_year", "fieldtype": "Select", "label": "Item Year"},
-    {"description": "Loaded from Item Templates and narrowed by the other selected filters.", "fieldname": "season", "fieldtype": "Select", "label": "Season"},
-    {"fieldname": "column_break_target_filters", "fieldtype": "Column Break"},
-    {"description": "Loaded from Item Templates and narrowed by the other selected filters.", "fieldname": "collection", "fieldtype": "Select", "label": "Collection"},
-    {"description": "Uses Item field custom_drop. Loaded from Item Templates and narrowed by the other selected filters.", "fieldname": "drop", "fieldtype": "Select", "label": "Drop / Batch"},
-    {"description": "Uses the Item Main Group field configured in DC Dispatch Settings.", "fieldname": "main_group", "fieldtype": "Select", "label": "Main Group"},
-    {"description": "Uses the Item Subgroup field configured in DC Dispatch Settings.", "fieldname": "subgroup", "fieldtype": "Select", "label": "Item Subgroup"},
-    {"fieldname": "advanced_filters_section", "fieldtype": "Section Break", "label": "Advanced Item Filters (Optional)"},
-    {"description": "Use only for additional Item criteria not covered by the controlled filters above.", "fieldname": "item_filters", "fieldtype": "Table", "label": "Advanced Item Filters", "options": "DC Dispatch Item Filter"},
-    {"fieldname": "loaded_items_section", "fieldtype": "Section Break", "label": "Items to Dispatch"},
-    {"fieldname": "items", "fieldtype": "Table", "label": "Items to Dispatch", "options": "DC Dispatch Run Item"},
-    {"fieldname": "stores_section", "fieldtype": "Section Break", "label": "Eligible Stores and No-History Decisions"},
-    {"fieldname": "store_rules", "fieldtype": "Table", "label": "Store Rules", "options": "DC Dispatch Store Rule"},
-    {"fieldname": "proposal_section", "fieldtype": "Section Break", "label": "Proposal Review and Execution"},
-    {"description": "Attach the reviewed workbook here before importing it.", "fieldname": "proposal_file", "fieldtype": "Attach", "label": "Reviewed Proposal Workbook"},
-    {"fieldname": "proposal_summary", "fieldtype": "HTML", "label": "Proposal Summary"},
-    {"fieldname": "stock_snapshot_hash", "fieldtype": "Data", "hidden": 1, "label": "Stock Snapshot Hash", "read_only": 1},
-    {"fieldname": "calculation_input_hash", "fieldtype": "Data", "hidden": 1, "label": "Calculation Input Hash", "read_only": 1}
+    {
+      "fieldname": "identity_section",
+      "fieldtype": "Section Break",
+      "label": "Initial Dispatch Run"
+    },
+    {
+      "default": "DCD-.YYYY.-.#####",
+      "fieldname": "naming_series",
+      "fieldtype": "Select",
+      "label": "Series",
+      "options": "DCD-.YYYY.-.#####",
+      "reqd": 1
+    },
+    {
+      "fieldname": "company",
+      "fieldtype": "Link",
+      "in_list_view": 1,
+      "in_standard_filter": 1,
+      "label": "Company",
+      "options": "Company",
+      "reqd": 1
+    },
+    {
+      "default": "Draft",
+      "fieldname": "status",
+      "fieldtype": "Select",
+      "in_list_view": 1,
+      "in_standard_filter": 1,
+      "label": "Status",
+      "options": "Draft\nItems Loaded\nReference Review Required\nCalculated\nProposal Imported\nApproved\nMaterial Requests Created\nCancelled",
+      "read_only": 1
+    },
+    {
+      "fieldname": "column_break_identity",
+      "fieldtype": "Column Break"
+    },
+    {
+      "default": "0",
+      "fieldname": "revision",
+      "fieldtype": "Int",
+      "label": "Proposal Revision",
+      "read_only": 1
+    },
+    {
+      "fieldname": "calculated_at",
+      "fieldtype": "Datetime",
+      "label": "Calculated At",
+      "read_only": 1
+    },
+    {
+      "fieldname": "reference_section",
+      "fieldtype": "Section Break",
+      "label": "Block A \u2014 Historical Sales Reference and Criteria"
+    },
+    {
+      "fieldname": "sales_from_date",
+      "fieldtype": "Date",
+      "label": "Sales From Date",
+      "reqd": 1
+    },
+    {
+      "fieldname": "sales_to_date",
+      "fieldtype": "Date",
+      "label": "Sales To Date",
+      "reqd": 1
+    },
+    {
+      "default": "100",
+      "description": "A historical template must match at least this percentage of the selected, nonblank fields for its Main Group.",
+      "fieldname": "minimum_match_percent",
+      "fieldtype": "Percent",
+      "label": "Minimum Field Match %",
+      "reqd": 1
+    },
+    {
+      "fieldname": "reference_fields",
+      "fieldtype": "Table",
+      "label": "Matching Fields by Main Group",
+      "options": "DC Dispatch Reference Field"
+    },
+    {
+      "fieldname": "historical_scope_section",
+      "fieldtype": "Section Break",
+      "label": "Historical Reference Filters"
+    },
+    {
+      "description": "Optional: further restrict the historical reference pool by Item fields such as Year, Season, Collection, Drop, or other configured Item fields. If Main Group is blank, the filter applies to all groups.",
+      "fieldname": "historical_reference_filters",
+      "fieldtype": "Table",
+      "label": "Historical Reference Filters",
+      "options": "DC Dispatch Historical Reference Filter"
+    },
+    {
+      "fieldname": "items_section",
+      "fieldtype": "Section Break",
+      "label": "Block B \u2014 Items to Dispatch"
+    },
+    {
+      "fieldname": "source_warehouse",
+      "fieldtype": "Link",
+      "in_standard_filter": 1,
+      "label": "Source DC Warehouse",
+      "options": "Warehouse",
+      "reqd": 1
+    },
+    {
+      "fieldname": "target_filters_section",
+      "fieldtype": "Section Break",
+      "label": "Target Item Filters"
+    },
+    {
+      "description": "Loaded from Item Templates and narrowed by the other selected filters.",
+      "fieldname": "item_year",
+      "fieldtype": "Select",
+      "label": "Item Year"
+    },
+    {
+      "description": "Loaded from Item Templates and narrowed by the other selected filters.",
+      "fieldname": "season",
+      "fieldtype": "Select",
+      "label": "Season"
+    },
+    {
+      "fieldname": "column_break_target_filters",
+      "fieldtype": "Column Break"
+    },
+    {
+      "description": "Loaded from Item Templates and narrowed by the other selected filters.",
+      "fieldname": "collection",
+      "fieldtype": "Select",
+      "label": "Collection"
+    },
+    {
+      "description": "Uses Item field custom_drop. Loaded from Item Templates and narrowed by the other selected filters.",
+      "fieldname": "drop",
+      "fieldtype": "Select",
+      "label": "Drop / Batch"
+    },
+    {
+      "description": "Uses the Item Main Group field configured in DC Dispatch Settings.",
+      "fieldname": "main_group",
+      "fieldtype": "Select",
+      "label": "Main Group"
+    },
+    {
+      "description": "Uses the Item Subgroup field configured in DC Dispatch Settings.",
+      "fieldname": "subgroup",
+      "fieldtype": "Select",
+      "label": "Item Subgroup"
+    },
+    {
+      "fieldname": "advanced_filters_section",
+      "fieldtype": "Section Break",
+      "label": "Advanced Item Filters (Optional)"
+    },
+    {
+      "description": "Use only for additional Item criteria not covered by the controlled filters above.",
+      "fieldname": "item_filters",
+      "fieldtype": "Table",
+      "label": "Advanced Item Filters",
+      "options": "DC Dispatch Item Filter"
+    },
+    {
+      "fieldname": "loaded_items_section",
+      "fieldtype": "Section Break",
+      "label": "Items to Dispatch"
+    },
+    {
+      "fieldname": "items",
+      "fieldtype": "Table",
+      "label": "Items to Dispatch",
+      "options": "DC Dispatch Run Item"
+    },
+    {
+      "fieldname": "stores_section",
+      "fieldtype": "Section Break",
+      "label": "Eligible Stores and No-History Decisions"
+    },
+    {
+      "fieldname": "store_rules",
+      "fieldtype": "Table",
+      "label": "Store Rules",
+      "options": "DC Dispatch Store Rule"
+    },
+    {
+      "fieldname": "proposal_section",
+      "fieldtype": "Section Break",
+      "label": "Proposal Review and Execution"
+    },
+    {
+      "description": "Attach the reviewed workbook here before importing it.",
+      "fieldname": "proposal_file",
+      "fieldtype": "Attach",
+      "label": "Reviewed Proposal Workbook"
+    },
+    {
+      "fieldname": "proposal_summary",
+      "fieldtype": "HTML",
+      "label": "Proposal Summary"
+    },
+    {
+      "fieldname": "stock_snapshot_hash",
+      "fieldtype": "Data",
+      "hidden": 1,
+      "label": "Stock Snapshot Hash",
+      "read_only": 1
+    },
+    {
+      "fieldname": "calculation_input_hash",
+      "fieldtype": "Data",
+      "hidden": 1,
+      "label": "Calculation Input Hash",
+      "read_only": 1
+    }
   ],
   "links": [
-    {"link_doctype": "DC Dispatch Proposal Line", "link_fieldname": "run"}
+    {
+      "link_doctype": "DC Dispatch Proposal Line",
+      "link_fieldname": "run"
+    }
   ],
-  "modified": "2026-08-12 00:00:00.000000",
+  "modified": "2026-08-17 00:00:00.000000",
   "modified_by": "Administrator",
   "module": "DC Dispatch",
   "name": "DC Dispatch Run",
   "owner": "Administrator",
   "permissions": [
-    {"create": 1, "email": 1, "export": 1, "print": 1, "read": 1, "report": 1, "role": "Stock User", "share": 1, "write": 1},
-    {"create": 1, "delete": 1, "email": 1, "export": 1, "print": 1, "read": 1, "report": 1, "role": "Stock Manager", "share": 1, "write": 1},
-    {"create": 1, "delete": 1, "email": 1, "export": 1, "print": 1, "read": 1, "report": 1, "role": "System Manager", "share": 1, "write": 1}
+    {
+      "create": 1,
+      "email": 1,
+      "export": 1,
+      "print": 1,
+      "read": 1,
+      "report": 1,
+      "role": "Stock User",
+      "share": 1,
+      "write": 1
+    },
+    {
+      "create": 1,
+      "delete": 1,
+      "email": 1,
+      "export": 1,
+      "print": 1,
+      "read": 1,
+      "report": 1,
+      "role": "Stock Manager",
+      "share": 1,
+      "write": 1
+    },
+    {
+      "create": 1,
+      "delete": 1,
+      "email": 1,
+      "export": 1,
+      "print": 1,
+      "read": 1,
+      "report": 1,
+      "role": "System Manager",
+      "share": 1,
+      "write": 1
+    }
   ],
   "search_fields": "status,company,source_warehouse",
   "sort_field": "modified",
   "sort_order": "DESC",
   "states": [
-    {"color": "Gray", "title": "Draft"},
-    {"color": "Orange", "title": "Reference Review Required"},
-    {"color": "Blue", "title": "Calculated"},
-    {"color": "Green", "title": "Approved"},
-    {"color": "Green", "title": "Material Requests Created"},
-    {"color": "Red", "title": "Cancelled"}
+    {
+      "color": "Gray",
+      "title": "Draft"
+    },
+    {
+      "color": "Orange",
+      "title": "Reference Review Required"
+    },
+    {
+      "color": "Blue",
+      "title": "Calculated"
+    },
+    {
+      "color": "Green",
+      "title": "Approved"
+    },
+    {
+      "color": "Green",
+      "title": "Material Requests Created"
+    },
+    {
+      "color": "Red",
+      "title": "Cancelled"
+    }
   ],
   "title_field": "status",
   "track_changes": 1

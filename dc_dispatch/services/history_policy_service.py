@@ -10,6 +10,10 @@ from frappe.utils import flt, now_datetime
 import dc_dispatch.services.run_service as rs
 
 
+# ------------------------------
+# Demand extraction
+# ------------------------------
+
 def demand_sales_breakdown(run, stores: list[str]):
     """Return sales-history components by Item Template and physical store.
 
@@ -122,14 +126,18 @@ def demand_sales_breakdown(run, stores: list[str]):
     return result
 
 
-def demand_historical_sales(run, stores: list[str]):
+def demand_historical_sales(run, stores: list[str], allowed_templates: set[str] | None = None):
     """Return the demand quantity map consumed by cohort scoring."""
     breakdown = demand_sales_breakdown(run, stores)
-    return {
-        key: flt(values["demand_qty"])
-        for key, values in breakdown.items()
-        if flt(values["demand_qty"]) != 0
-    }
+    result = {}
+    for key, values in breakdown.items():
+        template = key[0]
+        if allowed_templates is not None and template not in allowed_templates:
+            continue
+        demand_qty = flt(values["demand_qty"])
+        if demand_qty != 0:
+            result[key] = demand_qty
+    return result
 
 
 def return_audit_rows(run, stores: list[str]):
@@ -204,17 +212,163 @@ def return_audit_rows(run, stores: list[str]):
     )
 
 
+# ------------------------------
+# Historical reference filter logic
+# ------------------------------
+
+def historical_filter_rows(run):
+    return list(getattr(run, "historical_reference_filters", None) or [])
+
+
+def historical_filter_fieldnames(run):
+    return {row.fieldname for row in historical_filter_rows(run) if row.fieldname}
+
+
+def _applicable_historical_filters(run, main_group: str | None):
+    rows = []
+    for row in historical_filter_rows(run):
+        row_group = (row.main_group or "").strip()
+        if not row_group or row_group == (main_group or ""):
+            rows.append(row)
+    return rows
+
+
+def _split_filter_values(value):
+    return [part.strip() for part in cstr(value).split(",") if part.strip()]
+
+
+def cstr(value):
+    return "" if value is None else str(value)
+
+
+def _coerce_for_compare(value):
+    text = cstr(value).strip()
+    if text == "":
+        return None
+    try:
+        return float(text)
+    except Exception:
+        return text.lower()
+
+
+def _compare_between(actual_value, filter_value):
+    parts = [part.strip() for part in cstr(filter_value).split(",", 1)]
+    if len(parts) != 2:
+        return False
+    low = _coerce_for_compare(parts[0])
+    high = _coerce_for_compare(parts[1])
+    actual = _coerce_for_compare(actual_value)
+    if actual is None or low is None or high is None:
+        return False
+    if isinstance(actual, float) and isinstance(low, float) and isinstance(high, float):
+        return low <= actual <= high
+    actual = cstr(actual)
+    return cstr(low) <= actual <= cstr(high)
+
+
+def _matches_filter(actual_value, operator, filter_value):
+    operator = (operator or "=").strip()
+    actual_normal = rs._normal(actual_value)
+
+    if operator == "=":
+        return actual_normal == rs._normal(filter_value)
+    if operator == "!=":
+        return actual_normal != rs._normal(filter_value)
+    if operator == "in":
+        return actual_normal in {rs._normal(value) for value in _split_filter_values(filter_value)}
+    if operator == "not in":
+        return actual_normal not in {rs._normal(value) for value in _split_filter_values(filter_value)}
+    if operator == "like":
+        return rs._normal(filter_value) in actual_normal
+    if operator == "between":
+        return _compare_between(actual_value, filter_value)
+    return False
+
+
+def template_matches_historical_scope(run, target_main_group: str | None, template: str, template_values: dict):
+    rows = _applicable_historical_filters(run, target_main_group)
+    if not rows:
+        return True
+    values = template_values.get(template, {})
+    for row in rows:
+        if not row.fieldname:
+            continue
+        actual_value = values.get(row.fieldname)
+        if not _matches_filter(actual_value, row.operator, row.value):
+            return False
+    return True
+
+
+def historical_scope_candidates(run, item_row, candidate_templates: set[str], template_values: dict):
+    return {
+        template
+        for template in candidate_templates
+        if template_matches_historical_scope(
+            run,
+            getattr(item_row, "main_group", None),
+            template,
+            template_values,
+        )
+    }
+
+
+def historical_scope_text(run, target_main_group: str | None, field_labels: dict | None = None):
+    rows = _applicable_historical_filters(run, target_main_group)
+    if not rows:
+        return "All historical items within the selected sales date range"
+
+    parts = []
+    for row in rows:
+        label = (field_labels or {}).get(row.fieldname, row.field_label or row.fieldname)
+        prefix = f"[{row.main_group}] " if row.main_group else ""
+        parts.append(f"{prefix}{label} {row.operator or '='} {row.value}")
+    return " ; ".join(parts)
+
+
+def _allowed_templates_for_history_check(run, candidate_templates: set[str], template_values: dict):
+    if getattr(run, "items", None):
+        allowed = set()
+        for item_row in run.items:
+            allowed.update(
+                historical_scope_candidates(
+                    run,
+                    item_row,
+                    candidate_templates,
+                    template_values,
+                )
+            )
+        return allowed
+
+    return {
+        template
+        for template in candidate_templates
+        if template_matches_historical_scope(run, None, template, template_values)
+    }
+
+
+# ------------------------------
+# Main actions
+# ------------------------------
+
 def analyze_store_history(run):
-    """Store-history check using the demand-history policy."""
+    """Store-history check using the demand-history policy and scope filters."""
     rs._require_saved(run)
     if not run.store_rules:
         frappe.throw(_("Load eligible stores first."))
 
     stores = [row.store_warehouse for row in run.store_rules]
-    sales = demand_historical_sales(run, stores)
+    breakdown = demand_sales_breakdown(run, stores)
+    candidate_templates = {template for template, _store in breakdown}
+    settings = frappe.get_single("DC Dispatch Settings")
+    value_fields = historical_filter_fieldnames(run) | {settings.item_main_group_field}
+    template_values = rs._item_values(candidate_templates, value_fields) if candidate_templates else {}
+    allowed_templates = _allowed_templates_for_history_check(run, candidate_templates, template_values)
+
     totals = defaultdict(float)
-    for (_template, store), quantity in sales.items():
-        totals[store] += quantity
+    for (template, store), values in breakdown.items():
+        if template not in allowed_templates:
+            continue
+        totals[store] += max(0, flt(values["demand_qty"]))
 
     no_history = []
     for row in run.store_rules:
@@ -243,7 +397,6 @@ def analyze_store_history(run):
         "stores": [
             {
                 "store": row.store_warehouse,
-                # Keep net_units for backward compatibility with current UI/debug calls.
                 "net_units": max(0, totals[row.store_warehouse]),
                 "demand_units": max(0, totals[row.store_warehouse]),
                 "status": row.history_status,
@@ -286,22 +439,21 @@ def calculate_proposal(run):
     settings = frappe.get_single("DC Dispatch Settings")
     rs._validate_related_set_members(run, settings)
 
+    included_stores = [
+        row.store_warehouse
+        for row in run.store_rules
+        if row.decision != "Exclude"
+    ]
+
     stock_by_template = rs.get_variant_stock_bulk(
         [row.item_template for row in run.items],
         run.source_warehouse,
     )
-    sales = demand_historical_sales(
-        run,
-        [
-            row.store_warehouse
-            for row in run.store_rules
-            if row.decision != "Exclude"
-        ],
-    )
+    sales = demand_historical_sales(run, included_stores)
 
     candidate_templates = {template for template, _store in sales}
     target_templates = {row.item_template for row in run.items}
-    value_fields = rs._reference_fieldnames(run) | {
+    value_fields = rs._reference_fieldnames(run) | historical_filter_fieldnames(run) | {
         settings.item_main_group_field,
         settings.item_subgroup_field,
         settings.item_related_set_field,
@@ -330,10 +482,22 @@ def calculate_proposal(run):
         )
         item_row.target_qty = target_total
 
+        scoped_templates = historical_scope_candidates(
+            run,
+            item_row,
+            candidate_templates,
+            template_values,
+        )
+        scoped_sales = {
+            key: qty
+            for key, qty in sales.items()
+            if key[0] in scoped_templates
+        }
+
         scores, evidence, cohort = rs._cohort_scores(
             item_row,
             template_values,
-            sales,
+            scoped_sales,
             fields_by_group,
             settings.item_main_group_field,
             flt(run.minimum_match_percent),
@@ -369,6 +533,12 @@ def calculate_proposal(run):
             )
             warning = "; ".join(
                 value for value in [warning, reference_warning] if value
+            )
+
+        if not scoped_templates:
+            scope_warning = "No historical templates passed the Historical Reference Filters"
+            warning = "; ".join(
+                value for value in [warning, scope_warning] if value
             )
 
         item_row.cohort_templates = evidence["templates"]

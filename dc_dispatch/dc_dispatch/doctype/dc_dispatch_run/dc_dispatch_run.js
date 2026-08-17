@@ -18,7 +18,7 @@ frappe.ui.form.on("DC Dispatch Run", {
 
         [
             "company", "sales_from_date", "sales_to_date", "minimum_match_percent",
-            "reference_fields", "source_warehouse", ...TARGET_FILTER_FIELDS,
+            "reference_fields", "historical_reference_filters", "source_warehouse", ...TARGET_FILTER_FIELDS,
             "item_filters", "items", "store_rules",
         ].forEach((fieldname) => frm.set_df_property(fieldname, "read_only", editable ? 0 : 1));
 
@@ -112,6 +112,14 @@ frappe.ui.form.on("DC Dispatch Item Filter", {
     },
 });
 
+frappe.ui.form.on("DC Dispatch Historical Reference Filter", {
+    fieldname(frm, cdt, cdn) {
+        const row = locals[cdt][cdn];
+        const field = (frm._dc_dispatch_item_fields || []).find((value) => value.fieldname === row.fieldname);
+        if (field) frappe.model.set_value(cdt, cdn, "field_label", field.label);
+    },
+});
+
 async function direct_doc_action(frm, method, success_message) {
     try {
         const response = await frm.call(method);
@@ -139,8 +147,15 @@ function apply_item_field_options(frm) {
     const standard = frm._dc_dispatch_standard_item_fields || new Set();
     const reference_options = ["", ...rows.map((row) => row.fieldname)].join("\n");
     const advanced_options = ["", ...rows.filter((row) => !standard.has(row.fieldname)).map((row) => row.fieldname)].join("\n");
-    frm.fields_dict.reference_fields.grid.update_docfield_property("fieldname", "options", reference_options);
-    frm.fields_dict.item_filters.grid.update_docfield_property("fieldname", "options", advanced_options);
+    if (frm.fields_dict.reference_fields) {
+        frm.fields_dict.reference_fields.grid.update_docfield_property("fieldname", "options", reference_options);
+    }
+    if (frm.fields_dict.item_filters) {
+        frm.fields_dict.item_filters.grid.update_docfield_property("fieldname", "options", advanced_options);
+    }
+    if (frm.fields_dict.historical_reference_filters) {
+        frm.fields_dict.historical_reference_filters.grid.update_docfield_property("fieldname", "options", reference_options);
+    }
 }
 
 function refresh_target_filter_options(frm) {
@@ -165,7 +180,12 @@ function refresh_target_filter_options(frm) {
             if (frm.doc[fieldname] && !options.includes(frm.doc[fieldname])) frm.set_value(fieldname, "");
         });
         const main_group_options = ["", ...(options_by_field.main_group || [])].join("\n");
-        frm.fields_dict.reference_fields.grid.update_docfield_property("main_group", "options", main_group_options);
+        if (frm.fields_dict.reference_fields) {
+            frm.fields_dict.reference_fields.grid.update_docfield_property("main_group", "options", main_group_options);
+        }
+        if (frm.fields_dict.historical_reference_filters) {
+            frm.fields_dict.historical_reference_filters.grid.update_docfield_property("main_group", "options", main_group_options);
+        }
         frm.refresh_fields(TARGET_FILTER_FIELDS);
     });
 }
