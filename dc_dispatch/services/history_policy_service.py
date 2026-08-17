@@ -14,87 +14,27 @@ import dc_dispatch.services.run_service as rs
 # Demand extraction
 # ------------------------------
 
-def demand_sales_breakdown(run, stores: list[str]):
-    """Return sales-history components by Item Template and physical store.
+def _sales_invoice_item_has_field(fieldname: str) -> bool:
+    return bool(frappe.get_meta("Sales Invoice Item").get_field(fieldname))
 
-    Demand policy:
-        Demand Units = Gross Sales - Same-Store Returns
 
-    Cross-store returns are deliberately excluded from demand because the
-    merchandise physically remains at another store. Unlinked returns are
-    also excluded because their originating store cannot be proven.
-    """
+def _gross_sales_rows(run, stores: list[str]):
     if not stores:
-        return {}
+        return []
 
-    has_original_link = bool(
-        frappe.get_meta("Sales Invoice Item").get_field("sales_invoice_item")
-    )
-
-    if has_original_link:
-        original_join = (
-            "LEFT JOIN `tabSales Invoice Item` original_item "
-            "ON original_item.name = sii.sales_invoice_item"
-        )
-        same_store_return = """
-            CASE
-                WHEN si.is_return = 1
-                 AND original_item.name IS NOT NULL
-                 AND original_item.warehouse = sii.warehouse
-                THEN ABS(sii.qty)
-                ELSE 0
-            END
+    return frappe.db.sql(
         """
-        cross_store_return = """
-            CASE
-                WHEN si.is_return = 1
-                 AND original_item.name IS NOT NULL
-                 AND COALESCE(original_item.warehouse, '') != COALESCE(sii.warehouse, '')
-                THEN ABS(sii.qty)
-                ELSE 0
-            END
-        """
-        unlinked_return = """
-            CASE
-                WHEN si.is_return = 1
-                 AND original_item.name IS NULL
-                THEN ABS(sii.qty)
-                ELSE 0
-            END
-        """
-    else:
-        original_join = ""
-        same_store_return = "0"
-        cross_store_return = "0"
-        unlinked_return = """
-            CASE
-                WHEN si.is_return = 1
-                THEN ABS(sii.qty)
-                ELSE 0
-            END
-        """
-
-    rows = frappe.db.sql(
-        f"""
         SELECT
             COALESCE(NULLIF(item.variant_of, ''), item.name) AS item_template,
             sii.warehouse AS store_warehouse,
-            SUM(
-                CASE
-                    WHEN si.is_return = 0 THEN sii.qty
-                    ELSE 0
-                END
-            ) AS gross_sales,
-            SUM({same_store_return}) AS same_store_returns,
-            SUM({cross_store_return}) AS cross_store_returns_received,
-            SUM({unlinked_return}) AS unlinked_returns_received
+            SUM(sii.qty) AS gross_sales
         FROM `tabSales Invoice Item` sii
         INNER JOIN `tabSales Invoice` si
             ON si.name = sii.parent AND si.docstatus = 1
         INNER JOIN `tabItem` item
             ON item.name = sii.item_code
-        {original_join}
         WHERE si.company = %(company)s
+          AND si.is_return = 0
           AND si.posting_date BETWEEN %(from_date)s AND %(to_date)s
           AND sii.warehouse IN %(stores)s
         GROUP BY
@@ -110,19 +50,266 @@ def demand_sales_breakdown(run, stores: list[str]):
         as_dict=True,
     )
 
-    result = {}
+
+def _return_rows(run, return_stores: list[str] | None = None):
+    """Return all submitted return lines in the run period.
+
+    Resolution order is intentionally:
+      1. Sales Invoice Item.sales_invoice_item exact child-row link, when present.
+      2. Sales Invoice.return_against + item_code fallback.
+      3. If multiple original rows exist, accept the fallback only when all
+         matching rows point to the same warehouse; otherwise leave unresolved.
+    """
+    has_item_link = _sales_invoice_item_has_field("sales_invoice_item")
+    item_link_select = (
+        "sii.sales_invoice_item AS linked_sales_invoice_item"
+        if has_item_link
+        else "NULL AS linked_sales_invoice_item"
+    )
+
+    return_store_clause = ""
+    params = {
+        "company": run.company,
+        "from_date": run.sales_from_date,
+        "to_date": run.sales_to_date,
+    }
+    if return_stores:
+        return_store_clause = "AND sii.warehouse IN %(return_stores)s"
+        params["return_stores"] = tuple(return_stores)
+
+    rows = frappe.db.sql(
+        f"""
+        SELECT
+            si.name AS return_sales_invoice,
+            si.return_against,
+            si.posting_date,
+            sii.name AS return_sales_invoice_item,
+            sii.item_code,
+            sii.warehouse AS return_store_warehouse,
+            ABS(sii.qty) AS return_qty,
+            COALESCE(NULLIF(item.variant_of, ''), item.name) AS item_template,
+            {item_link_select}
+        FROM `tabSales Invoice Item` sii
+        INNER JOIN `tabSales Invoice` si
+            ON si.name = sii.parent AND si.docstatus = 1
+        INNER JOIN `tabItem` item
+            ON item.name = sii.item_code
+        WHERE si.company = %(company)s
+          AND si.is_return = 1
+          AND si.posting_date BETWEEN %(from_date)s AND %(to_date)s
+          {return_store_clause}
+        ORDER BY si.posting_date, si.name, sii.idx
+        """,
+        params,
+        as_dict=True,
+    )
+
+    if not rows:
+        return []
+
+    exact_names = {
+        row.linked_sales_invoice_item
+        for row in rows
+        if row.linked_sales_invoice_item
+    }
+    return_against_names = {
+        row.return_against
+        for row in rows
+        if row.return_against
+    }
+
+    original_filters = []
+    if exact_names:
+        original_filters.append(["name", "in", list(exact_names)])
+    if return_against_names:
+        original_filters.append(["parent", "in", list(return_against_names)])
+
+    original_rows = []
+    if original_filters:
+        # OR the exact-child and return-against candidate sets in SQL so we can
+        # resolve all return rows without an N+1 query pattern.
+        clauses = []
+        params = {}
+        if exact_names:
+            clauses.append("sii.name IN %(exact_names)s")
+            params["exact_names"] = tuple(exact_names)
+        if return_against_names:
+            clauses.append("sii.parent IN %(return_against_names)s")
+            params["return_against_names"] = tuple(return_against_names)
+
+        original_rows = frappe.db.sql(
+            f"""
+            SELECT
+                sii.name,
+                sii.parent,
+                sii.item_code,
+                sii.warehouse,
+                sii.qty,
+                sii.uom
+            FROM `tabSales Invoice Item` sii
+            WHERE {' OR '.join(clauses)}
+            """,
+            params,
+            as_dict=True,
+        )
+
+    by_name = {row.name: row for row in original_rows}
+    by_invoice_item = defaultdict(list)
+    for row in original_rows:
+        by_invoice_item[(row.parent, row.item_code)].append(row)
+
+    resolved = []
     for row in rows:
-        gross = flt(row.gross_sales)
-        same_store_returns = flt(row.same_store_returns)
-        cross_store_returns = flt(row.cross_store_returns_received)
-        unlinked_returns = flt(row.unlinked_returns_received)
-        result[(row.item_template, row.store_warehouse)] = {
-            "gross_sales": gross,
-            "same_store_returns": same_store_returns,
-            "cross_store_returns_received": cross_store_returns,
-            "unlinked_returns_received": unlinked_returns,
-            "demand_qty": gross - same_store_returns,
+        original = None
+        resolution_method = None
+
+        if row.linked_sales_invoice_item:
+            original = by_name.get(row.linked_sales_invoice_item)
+            if original:
+                resolution_method = "Sales Invoice Item Link"
+
+        if original is None and row.return_against:
+            candidates = by_invoice_item.get(
+                (row.return_against, row.item_code), []
+            )
+            if len(candidates) == 1:
+                original = candidates[0]
+                resolution_method = "Return Against + Item Code"
+            elif len(candidates) > 1:
+                warehouses = {
+                    candidate.warehouse
+                    for candidate in candidates
+                    if candidate.warehouse
+                }
+                if len(warehouses) == 1:
+                    original = candidates[0]
+                    resolution_method = (
+                        "Return Against + Item Code (Warehouse Unambiguous)"
+                    )
+
+        original_warehouse = original.warehouse if original else None
+        original_invoice = (
+            original.parent
+            if original
+            else (row.return_against or None)
+        )
+
+        if original_warehouse:
+            classification = (
+                "Same-Store Return - Deducted"
+                if original_warehouse == row.return_store_warehouse
+                else "Cross-Store Return - Excluded"
+            )
+        else:
+            classification = "Unresolved Return - Excluded"
+            if row.return_against:
+                resolution_method = (
+                    resolution_method
+                    or "Return Against Present - Original Item Ambiguous"
+                )
+            else:
+                resolution_method = resolution_method or "No Return Against"
+
+        resolved.append(
+            frappe._dict(
+                {
+                    **row,
+                    "original_sales_invoice": original_invoice,
+                    "original_store_warehouse": original_warehouse,
+                    "return_classification": classification,
+                    "resolution_method": resolution_method,
+                }
+            )
+        )
+
+    return resolved
+
+
+def demand_sales_breakdown(run, stores: list[str]):
+    """Return historical demand components by Item Template and store.
+
+    Demand policy:
+        Demand Units = Gross Sales - Same-Store Returns
+
+    Return origin resolution:
+        exact Sales Invoice Item link first; if blank, fall back to
+        Sales Invoice.return_against + item_code. Cross-store returns remain
+        excluded from demand because the original store made the sale and the
+        returned stock physically moved to another store.
+    """
+    if not stores:
+        return {}
+
+    result = {}
+    for row in _gross_sales_rows(run, stores):
+        key = (row.item_template, row.store_warehouse)
+        result[key] = {
+            "gross_sales": flt(row.gross_sales),
+            "same_store_returns": 0.0,
+            "cross_store_returns_received": 0.0,
+            "unlinked_returns_received": 0.0,
+            "demand_qty": flt(row.gross_sales),
         }
+
+    store_set = set(stores)
+    for row in _return_rows(run, stores):
+        return_store = row.return_store_warehouse
+        original_store = row.original_store_warehouse
+
+        if row.return_classification == "Same-Store Return - Deducted":
+            if return_store not in store_set:
+                continue
+            key = (row.item_template, return_store)
+            bucket = result.setdefault(
+                key,
+                {
+                    "gross_sales": 0.0,
+                    "same_store_returns": 0.0,
+                    "cross_store_returns_received": 0.0,
+                    "unlinked_returns_received": 0.0,
+                    "demand_qty": 0.0,
+                },
+            )
+            bucket["same_store_returns"] += flt(row.return_qty)
+
+        elif row.return_classification == "Cross-Store Return - Excluded":
+            if return_store not in store_set:
+                continue
+            key = (row.item_template, return_store)
+            bucket = result.setdefault(
+                key,
+                {
+                    "gross_sales": 0.0,
+                    "same_store_returns": 0.0,
+                    "cross_store_returns_received": 0.0,
+                    "unlinked_returns_received": 0.0,
+                    "demand_qty": 0.0,
+                },
+            )
+            bucket["cross_store_returns_received"] += flt(row.return_qty)
+
+        else:
+            if return_store not in store_set:
+                continue
+            key = (row.item_template, return_store)
+            bucket = result.setdefault(
+                key,
+                {
+                    "gross_sales": 0.0,
+                    "same_store_returns": 0.0,
+                    "cross_store_returns_received": 0.0,
+                    "unlinked_returns_received": 0.0,
+                    "demand_qty": 0.0,
+                },
+            )
+            bucket["unlinked_returns_received"] += flt(row.return_qty)
+
+    for bucket in result.values():
+        bucket["demand_qty"] = (
+            flt(bucket["gross_sales"])
+            - flt(bucket["same_store_returns"])
+        )
+
     return result
 
 
@@ -145,71 +332,13 @@ def return_audit_rows(run, stores: list[str]):
     if not stores:
         return []
 
-    has_original_link = bool(
-        frappe.get_meta("Sales Invoice Item").get_field("sales_invoice_item")
-    )
-
-    if has_original_link:
-        original_join = (
-            "LEFT JOIN `tabSales Invoice Item` original_item "
-            "ON original_item.name = sii.sales_invoice_item"
-        )
-        fields = """
-            original_item.parent AS original_sales_invoice,
-            original_item.warehouse AS original_store_warehouse,
-            CASE
-                WHEN original_item.name IS NULL
-                    THEN 'Unlinked Return - Excluded'
-                WHEN original_item.warehouse = sii.warehouse
-                    THEN 'Same-Store Return - Deducted'
-                ELSE 'Cross-Store Return - Excluded'
-            END AS return_classification
-        """
-        scope_expression = """
-            (
-                sii.warehouse IN %(stores)s
-                OR original_item.warehouse IN %(stores)s
-            )
-        """
-    else:
-        original_join = ""
-        fields = """
-            NULL AS original_sales_invoice,
-            NULL AS original_store_warehouse,
-            'Unlinked Return - Excluded' AS return_classification
-        """
-        scope_expression = "sii.warehouse IN %(stores)s"
-
-    return frappe.db.sql(
-        f"""
-        SELECT
-            si.name AS return_sales_invoice,
-            si.posting_date,
-            COALESCE(NULLIF(item.variant_of, ''), item.name) AS item_template,
-            sii.item_code,
-            sii.warehouse AS return_store_warehouse,
-            ABS(sii.qty) AS return_qty,
-            {fields}
-        FROM `tabSales Invoice Item` sii
-        INNER JOIN `tabSales Invoice` si
-            ON si.name = sii.parent AND si.docstatus = 1
-        INNER JOIN `tabItem` item
-            ON item.name = sii.item_code
-        {original_join}
-        WHERE si.company = %(company)s
-          AND si.is_return = 1
-          AND si.posting_date BETWEEN %(from_date)s AND %(to_date)s
-          AND {scope_expression}
-        ORDER BY si.posting_date, si.name, sii.idx
-        """,
-        {
-            "company": run.company,
-            "from_date": run.sales_from_date,
-            "to_date": run.sales_to_date,
-            "stores": tuple(stores),
-        },
-        as_dict=True,
-    )
+    store_set = set(stores)
+    return [
+        row
+        for row in _return_rows(run)
+        if row.return_store_warehouse in store_set
+        or row.original_store_warehouse in store_set
+    ]
 
 
 # ------------------------------

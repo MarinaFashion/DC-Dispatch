@@ -402,7 +402,7 @@ def _write_run_summary(sheet, run, active_rules, field_labels):
         ("Historical Reference Filters", historical_scope_summary),
         ("Demand Rule", "Gross Sales - Same-Store Returns"),
         ("Cross-Store Returns", "Excluded from demand score; shown separately in Return Audit."),
-        ("Unlinked Returns", "Excluded from demand score because original selling store cannot be proven."),
+        ("Return Resolution", "Exact Sales Invoice Item link first; fallback to Return Against + Item Code. Only unresolved/ambiguous returns remain excluded."),
     ]
 
     sheet.append(["Parameter", "Value"])
@@ -582,6 +582,7 @@ def _write_return_audit(sheet, rows):
         "Original Selling Warehouse",
         "Return Qty",
         "Classification / Demand Treatment",
+        "Original Link Method",
     ]
     sheet.append(headers)
 
@@ -597,6 +598,7 @@ def _write_return_audit(sheet, rows):
                 row.original_store_warehouse,
                 row.return_qty,
                 row.return_classification,
+                row.resolution_method,
             ]
         )
     _format_sheet(sheet, freeze="A2", auto_filter=True)
