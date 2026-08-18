@@ -5,23 +5,146 @@
   "doctype": "DocType",
   "editable_grid": 1,
   "engine": "InnoDB",
-  "field_order": ["item_template", "main_group", "subgroup", "related_set", "dc_qty", "dispatch_percentage", "target_qty", "cohort_templates", "cohort_units", "cohort_stores", "warning"],
+  "field_order": [
+    "item_image",
+    "item_image_url",
+    "item_template",
+    "main_group",
+    "subgroup",
+    "related_set",
+    "dc_qty",
+    "available_variant_count",
+    "avg_qty_per_variant_store",
+    "dispatch_percentage",
+    "avg_dispatch_qty_per_variant_store",
+    "target_qty",
+    "cohort_templates",
+    "cohort_units",
+    "cohort_stores",
+    "warning"
+  ],
   "fields": [
-    {"fieldname": "item_template", "fieldtype": "Link", "in_list_view": 1, "label": "Item Template", "options": "Item", "reqd": 1},
-    {"fieldname": "main_group", "fieldtype": "Data", "in_list_view": 1, "label": "Main Group", "read_only": 1},
-    {"fieldname": "subgroup", "fieldtype": "Data", "label": "Subgroup", "read_only": 1},
-    {"fieldname": "related_set", "fieldtype": "Data", "in_list_view": 1, "label": "Related Set", "read_only": 1},
-    {"fieldname": "dc_qty", "fieldtype": "Float", "in_list_view": 1, "label": "Available DC Qty", "read_only": 1},
-    {"default": "80", "fieldname": "dispatch_percentage", "fieldtype": "Percent", "in_list_view": 1, "label": "Dispatch %", "reqd": 1},
-    {"fieldname": "target_qty", "fieldtype": "Int", "in_list_view": 1, "label": "Target Qty", "read_only": 1},
-    {"fieldname": "cohort_templates", "fieldtype": "Int", "label": "Matching Templates", "read_only": 1},
-    {"fieldname": "cohort_units", "fieldtype": "Float", "label": "Cohort Net Units", "read_only": 1},
-    {"fieldname": "cohort_stores", "fieldtype": "Int", "label": "Stores with Sales", "read_only": 1},
-    {"fieldname": "warning", "fieldtype": "Small Text", "label": "Warning", "read_only": 1}
+    {
+      "fieldname": "item_image",
+      "fieldtype": "Image",
+      "in_list_view": 1,
+      "label": "Image",
+      "options": "item_image_url",
+      "read_only": 1
+    },
+    {
+      "fieldname": "item_image_url",
+      "fieldtype": "Data",
+      "hidden": 1,
+      "label": "Item Image URL",
+      "read_only": 1
+    },
+    {
+      "fieldname": "item_template",
+      "fieldtype": "Link",
+      "in_list_view": 1,
+      "label": "Item Template",
+      "options": "Item",
+      "reqd": 1
+    },
+    {
+      "fieldname": "main_group",
+      "fieldtype": "Data",
+      "in_list_view": 1,
+      "label": "Main Group",
+      "read_only": 1
+    },
+    {
+      "fieldname": "subgroup",
+      "fieldtype": "Data",
+      "label": "Subgroup",
+      "read_only": 1
+    },
+    {
+      "fieldname": "related_set",
+      "fieldtype": "Data",
+      "in_list_view": 1,
+      "label": "Related Set",
+      "read_only": 1
+    },
+    {
+      "fieldname": "dc_qty",
+      "fieldtype": "Float",
+      "in_list_view": 1,
+      "label": "Available DC Qty",
+      "read_only": 1
+    },
+    {
+      "default": "0",
+      "fieldname": "available_variant_count",
+      "fieldtype": "Int",
+      "hidden": 1,
+      "label": "Available Variant Count",
+      "read_only": 1
+    },
+    {
+      "default": "0",
+      "description": "Available DC Qty divided by variants with DC stock greater than zero, then divided by included eligible stores. Informational only.",
+      "fieldname": "avg_qty_per_variant_store",
+      "fieldtype": "Float",
+      "in_list_view": 1,
+      "label": "Avg Qty per Variant/Store",
+      "precision": "2",
+      "read_only": 1
+    },
+    {
+      "default": "80",
+      "fieldname": "dispatch_percentage",
+      "fieldtype": "Percent",
+      "in_list_view": 1,
+      "label": "Dispatch %",
+      "reqd": 1
+    },
+    {
+      "default": "0",
+      "description": "Avg Qty per Variant/Store multiplied by Dispatch %. Informational only.",
+      "fieldname": "avg_dispatch_qty_per_variant_store",
+      "fieldtype": "Float",
+      "in_list_view": 1,
+      "label": "Avg Dispatch Qty per Variant/Store",
+      "precision": "2",
+      "read_only": 1
+    },
+    {
+      "fieldname": "target_qty",
+      "fieldtype": "Int",
+      "in_list_view": 1,
+      "label": "Target Qty",
+      "read_only": 1
+    },
+    {
+      "fieldname": "cohort_templates",
+      "fieldtype": "Int",
+      "label": "Matching Templates",
+      "read_only": 1
+    },
+    {
+      "fieldname": "cohort_units",
+      "fieldtype": "Float",
+      "label": "Cohort Net Units",
+      "read_only": 1
+    },
+    {
+      "fieldname": "cohort_stores",
+      "fieldtype": "Int",
+      "label": "Stores with Sales",
+      "read_only": 1
+    },
+    {
+      "fieldname": "warning",
+      "fieldtype": "Small Text",
+      "label": "Warning",
+      "read_only": 1
+    }
   ],
   "istable": 1,
   "links": [],
-  "modified": "2026-08-12 00:00:00.000000",
+  "modified": "2026-08-18 11:08:00.000000",
   "modified_by": "Administrator",
   "module": "DC Dispatch",
   "name": "DC Dispatch Run Item",
@@ -31,4 +154,3 @@
   "sort_order": "DESC",
   "states": []
 }
-
