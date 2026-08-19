@@ -82,7 +82,10 @@ def create_material_requests(run):
         )
         if existing_request:
             existing.append(existing_request)
-            _link_lines(store_lines, existing_request)
+            _link_lines(
+                store_lines,
+                existing_request,
+            )
             continue
 
         savepoint = f"dc_dispatch_mr_{index}"
@@ -121,10 +124,15 @@ def create_material_requests(run):
                 document.submit()
 
             created.append(document.name)
-            _link_lines(store_lines, document.name)
+            _link_lines(
+                store_lines,
+                document.name,
+            )
 
         except Exception:
-            frappe.db.rollback(save_point=savepoint)
+            frappe.db.rollback(
+                save_point=savepoint
+            )
             frappe.log_error(
                 frappe.get_traceback(),
                 (
@@ -134,10 +142,57 @@ def create_material_requests(run):
             )
             errors.append(store)
 
-    if created or existing:
+    all_requests = sorted(
+        set(created + existing)
+    )
+
+    if all_requests:
         run.status = "Material Requests Created"
         run.flags.allow_final_status_update = True
         run.save()
+
+    picking_list = None
+    picking_list_error = None
+
+    # Generate the warehouse picking list only when every required
+    # store has a successful active Material Request.
+    if (
+        not errors
+        and len(all_requests) == len(grouped)
+    ):
+        try:
+            from dc_dispatch.services.picking_list_service import (
+                create_and_attach_picking_list,
+            )
+
+            picking_list = (
+                create_and_attach_picking_list(
+                    run,
+                    all_requests,
+                )
+            )
+        except Exception:
+            picking_list_error = (
+                "Material Requests were created successfully, "
+                "but the Warehouse Picking List PDF could not "
+                "be generated or attached."
+            )
+            frappe.log_error(
+                frappe.get_traceback(),
+                (
+                    f"DC Dispatch Run {run.name}: failed "
+                    "generating Warehouse Picking List"
+                ),
+            )
+            frappe.msgprint(
+                _(
+                    picking_list_error
+                    + " Run Create Material Requests again "
+                    "to retry the PDF attachment."
+                ),
+                indicator="orange",
+                alert=True,
+            )
 
     if errors:
         frappe.msgprint(
@@ -145,7 +200,8 @@ def create_material_requests(run):
                 "Some store Material Requests could not be created: {0}. "
                 "The successful stores were kept. Run Create Material Requests "
                 "again after correcting the errors; existing requests will not "
-                "be duplicated."
+                "be duplicated. The final Warehouse Picking List will be "
+                "generated only after all required Material Requests exist."
             ).format(", ".join(errors)),
             indicator="orange",
             alert=True,
@@ -155,7 +211,9 @@ def create_material_requests(run):
         "created": created,
         "existing": existing,
         "errors": errors,
-        "total": len(created) + len(existing),
+        "total": len(all_requests),
+        "picking_list": picking_list,
+        "picking_list_error": picking_list_error,
     }
 
 
@@ -171,6 +229,9 @@ def _link_lines(lines, material_request):
         """,
         {
             "material_request": material_request,
-            "line_names": tuple(line.name for line in lines),
+            "line_names": tuple(
+                line.name
+                for line in lines
+            ),
         },
     )
