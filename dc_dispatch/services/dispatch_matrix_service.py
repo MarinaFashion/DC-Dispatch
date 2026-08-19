@@ -190,7 +190,7 @@ def _variant_size_map(item_codes):
             == "size"
             and row.attribute_value
         ):
-            result[row.parent] = row.attribute_value
+            result[row.parent] = _display_size(row.attribute_value)
 
     return result
 
@@ -202,9 +202,57 @@ def _size_from_item_code(item_template, item_code):
 
     prefix = template + "-"
     if template and code.startswith(prefix):
-        return code[len(prefix):]
+        return _display_size(code[len(prefix):])
 
-    return code
+    return _display_size(code)
+
+
+def _display_size(value):
+    raw = str(value or "").strip()
+    if not raw:
+        return raw
+
+    key = raw.casefold().replace("-", " ").replace("_", " ")
+    key = " ".join(key.split())
+
+    aliases = {
+        "extra extra extra small": "XXXS",
+        "xxx small": "XXXS",
+        "xxxs": "XXXS",
+        "extra extra small": "XXS",
+        "xx small": "XXS",
+        "xxs": "XXS",
+        "extra small": "XS",
+        "x small": "XS",
+        "xs": "XS",
+        "small": "S",
+        "s": "S",
+        "medium": "M",
+        "med": "M",
+        "m": "M",
+        "large": "L",
+        "l": "L",
+        "extra large": "XL",
+        "x large": "XL",
+        "xl": "XL",
+        "extra extra large": "XXL",
+        "xx large": "XXL",
+        "xxl": "XXL",
+        "2xl": "XXL",
+        "2x large": "XXL",
+        "extra extra extra large": "XXXL",
+        "xxx large": "XXXL",
+        "xxxl": "XXXL",
+        "3xl": "XXXL",
+        "3x large": "XXXL",
+        "4xl": "XXXXL",
+        "4x large": "XXXXL",
+        "xxxxl": "XXXXL",
+        "5xl": "XXXXXL",
+        "5x large": "XXXXXL",
+        "xxxxxl": "XXXXXL",
+    }
+    return aliases.get(key, raw)
 
 
 def _size_sort_key(value):

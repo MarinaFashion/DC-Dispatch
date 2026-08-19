@@ -1123,11 +1123,7 @@ def _format_simple_allocation(
             get_column_letter(column)
         ].hidden = True
 
-    # Protect formulas / identifiers while allowing store cells.
-    sheet.protection.sheet = True
-    sheet.protection.password = "dcdispatch"
-    sheet.protection.selectLockedCells = False
-    sheet.protection.selectUnlockedCells = True
+    # Worksheet protection intentionally disabled for reliable editing across Excel clients.
 
 
 def _write_warnings(
