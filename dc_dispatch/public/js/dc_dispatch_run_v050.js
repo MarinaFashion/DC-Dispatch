@@ -4,6 +4,8 @@ const DC_DISPATCH_APPLY_TIER_RULES_METHOD =
     "dc_dispatch.services.tier_service.apply_tier_rules";
 const DC_DISPATCH_ARRANGE_NET_DEMAND_METHOD =
     "dc_dispatch.services.net_demand_priority_service.arrange_stores_by_net_demand";
+const DC_DISPATCH_ARRANGE_ITEMS_METHOD =
+    "dc_dispatch.services.item_arrangement_service.arrange_items_by_avg_qty";
 
 frappe.ui.form.on("DC Dispatch Run", {
     setup(frm) {
@@ -64,6 +66,21 @@ frappe.ui.form.on("DC Dispatch Run", {
                                 }).then(() => frm.reload_doc());
                             }
                         );
+                    },
+                    __("Prepare")
+                );
+            }
+
+            if ((frm.doc.items || []).length) {
+                frm.add_custom_button(
+                    __("Arrange Items by Avg Qty/Variant/Store"),
+                    () => {
+                        frappe.call({
+                            method: DC_DISPATCH_ARRANGE_ITEMS_METHOD,
+                            args: { run_name: frm.doc.name },
+                            freeze: true,
+                            freeze_message: __("Arranging target items by average quantity..."),
+                        }).then(() => frm.reload_doc());
                     },
                     __("Prepare")
                 );

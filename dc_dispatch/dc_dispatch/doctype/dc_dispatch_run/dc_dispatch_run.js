@@ -4,6 +4,8 @@ const TARGET_FILTER_METHOD =
     "dc_dispatch.dc_dispatch.doctype.dc_dispatch_run.dc_dispatch_run.get_target_filter_options";
 const PLANNING_METRICS_METHOD =
     "dc_dispatch.services.planning_metrics_service.refresh_item_planning_metrics";
+const OPTIMIZED_PROPOSAL_METHOD =
+    "dc_dispatch.services.proposal_service_v052.calculate_proposal_optimized";
 const TARGET_FILTER_FIELDS = ["item_year", "season", "collection", "drop", "main_group", "subgroup"];
 
 frappe.ui.form.on("DC Dispatch Run", {
@@ -367,15 +369,25 @@ async function check_store_history(frm, continue_callback) {
     }
 }
 
-function calculate_after_history_check(frm) {
-    check_store_history(frm, () =>
-        direct_doc_action(
-            frm,
-            "calculate_proposal",
-            __("Proposal calculated"),
-            __("Calculating dispatch proposal...")
-        )
-    );
+async function calculate_after_history_check(frm) {
+    frappe.dom.freeze(__("Calculating dispatch proposal..."));
+    try {
+        const response = await frappe.call({
+            method: OPTIMIZED_PROPOSAL_METHOD,
+            args: {run_name: frm.doc.name},
+        });
+        await frm.reload_doc();
+        frappe.show_alert({
+            message: __("Proposal calculated"),
+            indicator: "green",
+        });
+        return response;
+    } catch (error) {
+        console.error("DC Dispatch: Calculate Proposal failed", error);
+        throw error;
+    } finally {
+        frappe.dom.unfreeze();
+    }
 }
 
 function show_no_history_dialog(frm, data, continue_callback) {
