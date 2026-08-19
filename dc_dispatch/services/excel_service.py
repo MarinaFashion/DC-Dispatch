@@ -29,31 +29,25 @@ from dc_dispatch.services.run_service import (
 )
 
 
-PROPOSAL_HEADERS = [
-    "Line ID",
-    "Run ID",
-    "Revision",
-    "Source DC",
-    "Store Warehouse",
-    "Transit Warehouse",
+SIMPLE_SHEET = "Simple Allocation"
+DATA_SHEET = "_Data"
+
+VISIBLE_FIXED_HEADERS = [
     "Item Template",
-    "Item Variant / Size",
-    "Related Set",
-    "Main Group",
-    "Historical Demand Score",
-    "Store Share %",
-    "Suggested Qty",
-    "Final Qty",
-    "Exclude",
-    "Override Reason",
-    "Validation Status",
+    "Size",
 ]
 
-EDITABLE_HEADERS = {
-    "Final Qty",
-    "Exclude",
-    "Override Reason",
-}
+TOTAL_HEADERS = [
+    "Total Dispatched",
+    "Total DC Qty",
+    "Remaining Qty",
+]
+
+TECHNICAL_HEADERS = [
+    "__Item Code",
+    "__Run ID",
+    "__Revision",
+]
 
 
 @frappe.whitelist()
@@ -98,21 +92,32 @@ def export_proposal(run):
         run,
     )
 
-    _write_proposal(
-        workbook.create_sheet("Allocation Proposal"),
-        lines,
+    matrix = build_dispatch_matrix(
+        run,
+        lines=lines,
+    )
+
+    data_sheet = workbook.create_sheet(DATA_SHEET)
+    _write_hidden_data(
+        data_sheet,
+        run,
+        matrix,
     )
 
     _write_simple_allocation(
-        workbook.create_sheet("Simple Allocation"),
+        workbook.create_sheet(SIMPLE_SHEET),
         run,
-        lines,
+        matrix,
     )
 
     _write_warnings(
         workbook.create_sheet("Warnings"),
         run,
     )
+
+    # Technical data must remain in the workbook for safe re-import,
+    # but normal users do not need to see it.
+    data_sheet.sheet_state = "hidden"
 
     output = BytesIO()
     workbook.save(output)
@@ -126,6 +131,15 @@ def export_proposal(run):
 
 
 def import_proposal(run):
+    """Import the editable Simple Allocation matrix as Final Qty.
+
+    User-facing rules:
+      - only store quantity cells are intended to be edited;
+      - Tier Min/Max are proposal-generation rules and may be overridden;
+      - original Dispatch % / target may also be overridden by the reviewed
+        matrix;
+      - the hard stock ceiling remains the DC Stock Snapshot per variant.
+    """
     if run.status not in {
         "Calculated",
         "Proposal Imported",
@@ -160,188 +174,294 @@ def import_proposal(run):
             ).format(exc)
         )
 
-    if "Allocation Proposal" not in workbook.sheetnames:
+    if SIMPLE_SHEET not in workbook.sheetnames:
         frappe.throw(
             _(
                 "The workbook does not contain the "
-                "Allocation Proposal sheet."
+                "Simple Allocation sheet."
             )
         )
 
-    sheet = workbook["Allocation Proposal"]
+    sheet = workbook[SIMPLE_SHEET]
+
+    database_lines = frappe.get_all(
+        "DC Dispatch Proposal Line",
+        filters={
+            "run": run.name,
+            "revision": run.revision,
+        },
+        fields=[
+            "name",
+            "store_warehouse",
+            "item_template",
+            "item_code",
+            "related_set",
+            "suggested_qty",
+            "final_qty",
+            "exclude",
+        ],
+        limit_page_length=0,
+    )
+
+    if not database_lines:
+        frappe.throw(
+            _("No proposal lines exist for the current revision.")
+        )
+
+    matrix = build_dispatch_matrix(
+        run,
+        lines=database_lines,
+    )
+
+    expected_stores = list(
+        matrix["stores"]
+    )
+    expected_rows = {
+        row["item_code"]: row
+        for row in matrix["rows"]
+    }
 
     headers = {
-        cell.value: index + 1
-        for index, cell in enumerate(sheet[1])
+        cell.value: cell.column
+        for cell in sheet[1]
         if cell.value
     }
 
+    required_headers = (
+        VISIBLE_FIXED_HEADERS
+        + expected_stores
+        + TOTAL_HEADERS
+        + TECHNICAL_HEADERS
+    )
+
     missing_headers = [
         header
-        for header in PROPOSAL_HEADERS
+        for header in required_headers
         if header not in headers
     ]
 
     if missing_headers:
         frappe.throw(
-            _("Missing workbook columns: {0}").format(
+            _(
+                "The Simple Allocation sheet is missing columns: {0}"
+            ).format(
                 ", ".join(missing_headers)
             )
         )
 
-    database_lines = {
-        row.name: row
-        for row in frappe.get_all(
-            "DC Dispatch Proposal Line",
-            filters={
-                "run": run.name,
-                "revision": run.revision,
-            },
-            fields=[
-                "name",
-                "run",
-                "revision",
-                "store_warehouse",
-                "item_template",
-                "item_code",
-                "related_set",
-                "suggested_qty",
-                "final_qty",
-                "exclude",
-            ],
-            limit_page_length=0,
+    # Store columns must remain exactly the current active stores.
+    total_dispatched_col = headers["Total Dispatched"]
+    actual_store_headers = [
+        sheet.cell(1, column).value
+        for column in range(
+            headers["Size"] + 1,
+            total_dispatched_col,
         )
+    ]
+
+    if actual_store_headers != expected_stores:
+        frappe.throw(
+            _(
+                "Store columns were changed. Please export a fresh "
+                "workbook and edit only the store quantity cells."
+            )
+        )
+
+    line_by_key = {
+        (
+            row.item_code,
+            row.store_warehouse,
+        ): row
+        for row in database_lines
     }
 
     imported = {}
+    seen_item_codes = set()
+    variant_totals = defaultdict(int)
+    template_totals = defaultdict(int)
+    validation_rows = []
     errors = []
 
     for row_number in range(
         2,
         sheet.max_row + 1,
     ):
-        line_id = sheet.cell(
+        item_code = sheet.cell(
             row_number,
-            headers["Line ID"],
+            headers["__Item Code"],
         ).value
 
-        if (
-            not line_id
-            and all(
-                sheet.cell(
-                    row_number,
-                    column,
-                ).value in (None, "")
-                for column in range(
-                    1,
-                    sheet.max_column + 1,
-                )
-            )
-        ):
+        # Ignore the visible bottom Total row / blank rows.
+        if not item_code:
             continue
 
-        if line_id not in database_lines:
+        item_code = str(item_code).strip()
+
+        if item_code in seen_item_codes:
             errors.append(
-                f"Row {row_number}: unknown Line ID {line_id}."
+                f"Row {row_number}: duplicate variant {item_code}."
             )
             continue
 
-        if line_id in imported:
+        seen_item_codes.add(item_code)
+
+        if item_code not in expected_rows:
             errors.append(
-                f"Row {row_number}: duplicate Line ID {line_id}."
+                f"Row {row_number}: unknown variant {item_code}."
             )
             continue
 
-        run_id = sheet.cell(
-            row_number,
-            headers["Run ID"],
-        ).value
-
-        revision = sheet.cell(
-            row_number,
-            headers["Revision"],
-        ).value
-
-        if (
-            run_id != run.name
-            or cint(revision) != cint(run.revision)
-        ):
-            errors.append(
-                f"Row {row_number}: run ID or revision "
-                "does not match the current proposal."
-            )
-            continue
-
-        final_value = sheet.cell(
-            row_number,
-            headers["Final Qty"],
-        ).value
-
-        try:
-            final_number = float(
-                final_value or 0
-            )
-        except (TypeError, ValueError):
-            errors.append(
-                f"Row {row_number}: Final Qty must "
-                "be a whole number."
-            )
-            continue
-
-        if (
-            final_number < 0
-            or not final_number.is_integer()
-        ):
-            errors.append(
-                f"Row {row_number}: Final Qty must be "
-                "a non-negative whole number."
-            )
-            continue
-
-        exclude = _as_check(
+        run_id = str(
             sheet.cell(
                 row_number,
-                headers["Exclude"],
-            ).value
-        )
-
-        reason = str(
-            sheet.cell(
-                row_number,
-                headers["Override Reason"],
+                headers["__Run ID"],
             ).value
             or ""
         ).strip()
 
-        original = database_lines[line_id]
-
-        changed = (
-            cint(final_number)
-            != cint(original.suggested_qty)
-            or exclude
+        revision = cint(
+            sheet.cell(
+                row_number,
+                headers["__Revision"],
+            ).value
         )
 
-        if changed and not reason:
+        if (
+            run_id != run.name
+            or revision != cint(run.revision)
+        ):
             errors.append(
-                f"Row {row_number}: Override Reason is "
-                "required when changing or excluding a line."
+                f"Row {row_number}: Run ID or Revision does not "
+                "match the current proposal."
+            )
+            continue
+
+        expected = expected_rows[item_code]
+
+        visible_template = str(
+            sheet.cell(
+                row_number,
+                headers["Item Template"],
+            ).value
+            or ""
+        ).strip()
+
+        visible_size = str(
+            sheet.cell(
+                row_number,
+                headers["Size"],
+            ).value
+            or ""
+        ).strip()
+
+        if visible_template != str(
+            expected["item_template"] or ""
+        ).strip():
+            errors.append(
+                f"Row {row_number}: Item Template was changed."
+            )
+            continue
+
+        if visible_size != str(
+            expected["size"] or ""
+        ).strip():
+            errors.append(
+                f"Row {row_number}: Size was changed."
+            )
+            continue
+
+        row_total = 0
+
+        for store in expected_stores:
+            value = sheet.cell(
+                row_number,
+                headers[store],
+            ).value
+
+            try:
+                number = float(
+                    0
+                    if value in (None, "")
+                    else value
+                )
+            except (TypeError, ValueError):
+                errors.append(
+                    f"Row {row_number}, {store}: quantity must "
+                    "be a whole number."
+                )
+                continue
+
+            if (
+                number < 0
+                or not number.is_integer()
+            ):
+                errors.append(
+                    f"Row {row_number}, {store}: quantity must "
+                    "be a non-negative whole number."
+                )
+                continue
+
+            quantity = cint(number)
+            key = (
+                item_code,
+                store,
             )
 
-        imported[line_id] = {
-            "final_qty": cint(final_number),
-            "exclude": exclude,
-            "override_reason": reason,
-        }
+            original = line_by_key.get(key)
+            if not original:
+                errors.append(
+                    f"Row {row_number}, {store}: no proposal line "
+                    f"exists for {item_code}."
+                )
+                continue
 
-    missing_lines = (
-        set(database_lines)
-        - set(imported)
+            imported[original.name] = {
+                "final_qty": quantity,
+                # Zero Final Qty is sufficient; the old Exclude column
+                # is no longer part of the user workflow.
+                "exclude": 0,
+                "override_reason": "",
+            }
+
+            row_total += quantity
+            variant_totals[item_code] += quantity
+            template_totals[
+                original.item_template
+            ] += quantity
+
+            validation_rows.append(
+                {
+                    "store_warehouse": (
+                        original.store_warehouse
+                    ),
+                    "item_template": (
+                        original.item_template
+                    ),
+                    "related_set": (
+                        original.related_set
+                    ),
+                    "final_qty": quantity,
+                    "exclude": 0,
+                }
+            )
+
+    missing_variants = (
+        set(expected_rows)
+        - seen_item_codes
     )
 
-    if missing_lines:
+    if missing_variants:
         errors.append(
-            f"The workbook is missing "
-            f"{len(missing_lines)} proposal lines."
+            "The workbook is missing variants: "
+            + ", ".join(
+                sorted(missing_variants)[:30]
+            )
+        )
+
+    if len(imported) != len(database_lines):
+        errors.append(
+            "The workbook does not contain exactly one editable "
+            "quantity for every proposal variant/store line."
         )
 
     if errors:
@@ -349,38 +469,10 @@ def import_proposal(run):
             "<br>".join(errors[:50])
         )
 
-    _validate_imported_totals(
-        run,
-        database_lines,
-        imported,
-    )
-
-    for line_id, values in imported.items():
-        frappe.db.set_value(
-            "DC Dispatch Proposal Line",
-            line_id,
-            values,
-            update_modified=False,
-        )
-
-    run.status = "Proposal Imported"
-    run.save()
-
-    validate_current_proposal(run)
-
-    return {
-        "lines": len(imported),
-        "status": run.status,
-    }
-
-
-def _validate_imported_totals(
-    run,
-    lines,
-    imported,
-):
     snapshots = {
-        row.item_code: flt(row.actual_qty)
+        row.item_code: cint(
+            flt(row.actual_qty)
+        )
         for row in frappe.get_all(
             "DC Dispatch Stock Snapshot",
             filters={
@@ -395,95 +487,82 @@ def _validate_imported_totals(
         )
     }
 
-    variant_totals = defaultdict(int)
-    template_totals = defaultdict(int)
-    validation_rows = []
-
-    for line_id, original in lines.items():
-        values = imported[line_id]
-
-        quantity = (
-            0
-            if values["exclude"]
-            else values["final_qty"]
-        )
-
-        variant_totals[
-            original.item_code
-        ] += quantity
-
-        template_totals[
-            original.item_template
-        ] += quantity
-
-        validation_rows.append(
-            {
-                "store_warehouse": (
-                    original.store_warehouse
-                ),
-                "item_template": (
-                    original.item_template
-                ),
-                "related_set": (
-                    original.related_set
-                ),
-                "final_qty": quantity,
-                "exclude": values["exclude"],
-            }
-        )
-
-    errors = []
+    stock_errors = []
 
     for item_code, quantity in (
         variant_totals.items()
     ):
-        if quantity > snapshots.get(
+        available = snapshots.get(
             item_code,
             0,
-        ):
-            errors.append(
-                f"{item_code}: final {quantity} exceeds "
-                f"snapshot "
-                f"{snapshots.get(item_code, 0):g}."
+        )
+        if quantity > available:
+            stock_errors.append(
+                f"{item_code}: Final Qty {quantity} exceeds "
+                f"DC Stock Snapshot {available}."
             )
 
-    targets = {
-        row.item_template: cint(row.target_qty)
-        for row in run.items
-    }
+    if stock_errors:
+        frappe.throw(
+            "<br>".join(stock_errors[:50])
+        )
 
-    for template, quantity in (
-        template_totals.items()
-    ):
-        if quantity > targets.get(
-            template,
-            0,
-        ):
-            errors.append(
-                f"{template}: final {quantity} exceeds "
-                f"dispatch target "
-                f"{targets.get(template, 0)}."
-            )
-
+    # Preserve the Related Set integrity rule. Tier Min/Max are
+    # intentionally NOT validated here because manual review is
+    # allowed to override them.
     expected_members = defaultdict(set)
-
     for row in run.items:
         if row.related_set:
             expected_members[
                 row.related_set
             ].add(row.item_template)
 
-    errors.extend(
-        validate_related_sets(
-            validation_rows,
-            expected_members,
-        )
+    related_errors = validate_related_sets(
+        validation_rows,
+        expected_members,
     )
 
-    if errors:
+    if related_errors:
         frappe.throw(
-            "<br>".join(errors[:50])
+            "<br>".join(related_errors[:50])
         )
+
+    # Promote the reviewed style total to the run's current Dispatch Target.
+    # This makes Dispatch % an initial planning input while still allowing
+    # the reviewed matrix to become the final approved plan.
+    for item_row in run.items:
+        item_row.target_qty = cint(
+            template_totals.get(
+                item_row.item_template,
+                0,
+            )
+        )
+
+    for line_id, values in imported.items():
+        frappe.db.set_value(
+            "DC Dispatch Proposal Line",
+            line_id,
+            values,
+            update_modified=False,
+        )
+
+    run.status = "Proposal Imported"
+    run.save()
+
+    # Normal proposal validation now succeeds because target_qty has been
+    # promoted to the reviewed final style total. Variant stock remains the
+    # hard ceiling.
+    validate_current_proposal(run)
+
+    return {
+        "lines": len(imported),
+        "variants": len(expected_rows),
+        "stores": len(expected_stores),
+        "final_qty": sum(
+            variant_totals.values()
+        ),
+        "status": run.status,
+    }
 
 
 def _proposal_lines(run):
@@ -526,6 +605,13 @@ def _write_summary(
     run,
     lines,
 ):
+    current_final = sum(
+        0
+        if row.exclude
+        else cint(row.final_qty)
+        for row in lines
+    )
+
     rows = [
         ("DC Dispatch Run", run.name),
         ("Revision", run.revision),
@@ -549,11 +635,8 @@ def _write_summary(
             ),
         ),
         (
-            "Suggested Quantity",
-            sum(
-                cint(row.suggested_qty)
-                for row in lines
-            ),
+            "Current Final Quantity",
+            current_final,
         ),
     ]
 
@@ -610,101 +693,203 @@ def _write_style_summary(
     )
 
 
-def _write_proposal(
+def _write_hidden_data(
     sheet,
-    lines,
+    run,
+    matrix,
 ):
-    sheet.append(PROPOSAL_HEADERS)
+    sheet.append(
+        [
+            "Item Code",
+            "Item Template",
+            "Size",
+            "Snapshot DC Qty",
+            "Run ID",
+            "Revision",
+        ]
+    )
 
-    for row in lines:
+    for row in matrix["rows"]:
         sheet.append(
             [
-                row.name,
-                row.run,
-                row.revision,
-                row.source_warehouse,
-                row.store_warehouse,
-                row.transit_warehouse,
-                row.item_template,
-                row.item_code,
-                row.related_set,
-                row.main_group,
-                row.sales_score,
-                row.share_percent,
-                row.suggested_qty,
-                row.final_qty,
-                (
-                    "Yes"
-                    if row.exclude
-                    else "No"
-                ),
-                row.override_reason,
-                row.validation_status,
+                row["item_code"],
+                row["item_template"],
+                row["size"],
+                row["total_dc_qty"],
+                run.name,
+                cint(run.revision),
             ]
         )
 
-    _format_table(
-        sheet,
-        editable_columns=EDITABLE_HEADERS,
-    )
-
-    sheet.freeze_panes = "A2"
-    sheet.auto_filter.ref = sheet.dimensions
-    sheet.protection.sheet = True
-    sheet.protection.password = "dcdispatch"
+    # The technical sheet is not protected because it is hidden.
+    # Import never trusts its formulas or totals; it validates against DB.
+    for column in range(
+        1,
+        sheet.max_column + 1,
+    ):
+        sheet.column_dimensions[
+            get_column_letter(column)
+        ].width = 20
 
 
 def _write_simple_allocation(
     sheet,
     run,
-    lines,
+    matrix,
 ):
-    matrix = build_dispatch_matrix(
-        run,
-        lines=lines,
+    stores = list(
+        matrix["stores"]
     )
 
     headers = (
-        ["Item Template", "Size"]
-        + matrix["stores"]
-        + [
-            "Total Dispatched",
-            "Total DC Qty",
-            "Remaining Qty",
-        ]
+        VISIBLE_FIXED_HEADERS
+        + stores
+        + TOTAL_HEADERS
+        + TECHNICAL_HEADERS
     )
     sheet.append(headers)
 
-    for row in matrix["rows"]:
-        sheet.append(
-            [
-                row["item_template"],
-                row["size"],
-                *[
+    item_code_col = len(headers) - 2
+    run_id_col = len(headers) - 1
+    revision_col = len(headers)
+
+    first_store_col = 3
+    last_store_col = (
+        first_store_col
+        + len(stores)
+        - 1
+    )
+
+    total_dispatched_col = (
+        last_store_col + 1
+    )
+    total_dc_col = (
+        last_store_col + 2
+    )
+    remaining_col = (
+        last_store_col + 3
+    )
+
+    for row_index, row in enumerate(
+        matrix["rows"],
+        start=2,
+    ):
+        sheet.cell(
+            row_index,
+            1,
+            row["item_template"],
+        )
+        sheet.cell(
+            row_index,
+            2,
+            row["size"],
+        )
+
+        for offset, store in enumerate(
+            stores,
+            start=first_store_col,
+        ):
+            sheet.cell(
+                row_index,
+                offset,
+                cint(
                     row["store_quantities"].get(
                         store,
                         0,
                     )
-                    for store in matrix["stores"]
-                ],
-                row["total_dispatched"],
-                row["total_dc_qty"],
-                row["remaining_qty"],
-            ]
+                ),
+            )
+
+        first_store_letter = (
+            get_column_letter(
+                first_store_col
+            )
+        )
+        last_store_letter = (
+            get_column_letter(
+                last_store_col
+            )
+        )
+
+        sheet.cell(
+            row_index,
+            total_dispatched_col,
+            (
+                f"=SUM("
+                f"{first_store_letter}{row_index}:"
+                f"{last_store_letter}{row_index})"
+            ),
+        )
+
+        item_code_letter = (
+            get_column_letter(
+                item_code_col
+            )
+        )
+
+        # Formula intentionally points to the hidden snapshot sheet.
+        # Server import independently validates against the DB snapshot.
+        sheet.cell(
+            row_index,
+            total_dc_col,
+            (
+                f"=SUMIF("
+                f"'{DATA_SHEET}'!$A:$A,"
+                f"${item_code_letter}{row_index},"
+                f"'{DATA_SHEET}'!$D:$D)"
+            ),
+        )
+
+        total_dispatched_letter = (
+            get_column_letter(
+                total_dispatched_col
+            )
+        )
+        total_dc_letter = (
+            get_column_letter(
+                total_dc_col
+            )
+        )
+
+        sheet.cell(
+            row_index,
+            remaining_col,
+            (
+                f"={total_dc_letter}{row_index}-"
+                f"{total_dispatched_letter}{row_index}"
+            ),
+        )
+
+        sheet.cell(
+            row_index,
+            item_code_col,
+            row["item_code"],
+        )
+        sheet.cell(
+            row_index,
+            run_id_col,
+            run.name,
+        )
+        sheet.cell(
+            row_index,
+            revision_col,
+            cint(run.revision),
         )
 
     total_row = sheet.max_row + 1
+
     sheet.cell(
         total_row,
         1,
         "Total",
     )
 
+    # Store totals
     for column in range(
-        3,
-        sheet.max_column + 1,
+        first_store_col,
+        last_store_col + 1,
     ):
-        column_letter = get_column_letter(
+        letter = get_column_letter(
             column
         )
         sheet.cell(
@@ -712,23 +897,77 @@ def _write_simple_allocation(
             column,
             (
                 f"=SUM("
-                f"{column_letter}2:"
-                f"{column_letter}"
-                f"{total_row - 1})"
+                f"{letter}2:"
+                f"{letter}{total_row - 1})"
             ),
         )
 
+    # Total Dispatched, Total DC Qty and Remaining are also formulas.
+    for column in (
+        total_dispatched_col,
+        total_dc_col,
+        remaining_col,
+    ):
+        letter = get_column_letter(
+            column
+        )
+        sheet.cell(
+            total_row,
+            column,
+            (
+                f"=SUM("
+                f"{letter}2:"
+                f"{letter}{total_row - 1})"
+            ),
+        )
+
+    _format_simple_allocation(
+        sheet,
+        stores,
+        first_store_col,
+        last_store_col,
+        total_dispatched_col,
+        total_dc_col,
+        remaining_col,
+        item_code_col,
+        run_id_col,
+        revision_col,
+        total_row,
+    )
+
+
+def _format_simple_allocation(
+    sheet,
+    stores,
+    first_store_col,
+    last_store_col,
+    total_dispatched_col,
+    total_dc_col,
+    remaining_col,
+    item_code_col,
+    run_id_col,
+    revision_col,
+    total_row,
+):
     header_fill = PatternFill(
         "solid",
         fgColor="1F7A35",
     )
-    body_fill = PatternFill(
+    editable_fill = PatternFill(
         "solid",
         fgColor="C6EFCE",
     )
-    alternate_fill = PatternFill(
+    alternate_editable_fill = PatternFill(
         "solid",
         fgColor="A9E6B2",
+    )
+    locked_fill = PatternFill(
+        "solid",
+        fgColor="E2F0D9",
+    )
+    warning_fill = PatternFill(
+        "solid",
+        fgColor="FFF2CC",
     )
     total_fill = PatternFill(
         "solid",
@@ -746,22 +985,89 @@ def _write_simple_allocation(
             vertical="center",
             wrap_text=True,
         )
+        cell.protection = Protection(
+            locked=True
+        )
 
     for row_number in range(
         2,
         total_row,
     ):
-        fill = (
-            body_fill
+        editable_row_fill = (
+            editable_fill
             if row_number % 2 == 0
-            else alternate_fill
+            else alternate_editable_fill
         )
 
-        for cell in sheet[row_number]:
-            cell.fill = fill
+        # Item Template / Size are locked reference values.
+        for column in (1, 2):
+            cell = sheet.cell(
+                row_number,
+                column,
+            )
+            cell.fill = locked_fill
+            cell.protection = Protection(
+                locked=True
+            )
             cell.alignment = Alignment(
                 horizontal="center",
                 vertical="center",
+            )
+
+        # Only store quantity cells are editable.
+        for column in range(
+            first_store_col,
+            last_store_col + 1,
+        ):
+            cell = sheet.cell(
+                row_number,
+                column,
+            )
+            cell.fill = editable_row_fill
+            cell.protection = Protection(
+                locked=False
+            )
+            cell.alignment = Alignment(
+                horizontal="center",
+                vertical="center",
+            )
+            cell.number_format = "0"
+
+        # Formula totals are locked.
+        for column in (
+            total_dispatched_col,
+            total_dc_col,
+            remaining_col,
+        ):
+            cell = sheet.cell(
+                row_number,
+                column,
+            )
+            cell.fill = (
+                warning_fill
+                if column == remaining_col
+                else locked_fill
+            )
+            cell.protection = Protection(
+                locked=True
+            )
+            cell.alignment = Alignment(
+                horizontal="center",
+                vertical="center",
+            )
+            cell.number_format = "0"
+
+        # Hidden technical values are locked.
+        for column in (
+            item_code_col,
+            run_id_col,
+            revision_col,
+        ):
+            sheet.cell(
+                row_number,
+                column,
+            ).protection = Protection(
+                locked=True
             )
 
     for cell in sheet[total_row]:
@@ -774,25 +1080,21 @@ def _write_simple_allocation(
             horizontal="center",
             vertical="center",
         )
+        cell.protection = Protection(
+            locked=True
+        )
 
     sheet.freeze_panes = "C2"
 
     if total_row > 2:
         sheet.auto_filter.ref = (
             f"A1:"
-            f"{get_column_letter(sheet.max_column)}"
+            f"{get_column_letter(remaining_col)}"
             f"{total_row - 1}"
         )
 
     sheet.column_dimensions["A"].width = 20
     sheet.column_dimensions["B"].width = 10
-
-    first_store_col = 3
-    last_store_col = (
-        first_store_col
-        + len(matrix["stores"])
-        - 1
-    )
 
     for column in range(
         first_store_col,
@@ -802,13 +1104,30 @@ def _write_simple_allocation(
             get_column_letter(column)
         ].width = 18
 
-    for column in range(
-        last_store_col + 1,
-        sheet.max_column + 1,
+    for column in (
+        total_dispatched_col,
+        total_dc_col,
+        remaining_col,
     ):
         sheet.column_dimensions[
             get_column_letter(column)
         ].width = 16
+
+    # Technical columns remain in the workbook but are invisible.
+    for column in (
+        item_code_col,
+        run_id_col,
+        revision_col,
+    ):
+        sheet.column_dimensions[
+            get_column_letter(column)
+        ].hidden = True
+
+    # Protect formulas / identifiers while allowing store cells.
+    sheet.protection.sheet = True
+    sheet.protection.password = "dcdispatch"
+    sheet.protection.selectLockedCells = False
+    sheet.protection.selectUnlockedCells = True
 
 
 def _write_warnings(
@@ -914,43 +1233,15 @@ def _format_table(
                 )
 
                 if header in editable_columns:
-                    cell.protection = (
-                        Protection(
-                            locked=False
-                        )
+                    cell.protection = Protection(
+                        locked=False
                     )
                     cell.fill = editable_fill
                 else:
-                    cell.protection = (
-                        Protection(
-                            locked=True
-                        )
+                    cell.protection = Protection(
+                        locked=True
                     )
 
         sheet.column_dimensions[
             get_column_letter(column)
         ].width = width
-
-
-def _as_check(value):
-    if isinstance(value, bool):
-        return int(value)
-
-    if isinstance(
-        value,
-        (int, float),
-    ):
-        return int(bool(value))
-
-    return int(
-        str(value or "")
-        .strip()
-        .casefold()
-        in {
-            "yes",
-            "y",
-            "true",
-            "1",
-            "exclude",
-        }
-    )
