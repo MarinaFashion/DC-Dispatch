@@ -4,7 +4,7 @@ app_publisher = "Marina Trading Company"
 app_description = "Sales-informed initial DC dispatch planning"
 app_email = "it@marinafashion.com.sa"
 app_license = "MIT"
-app_version = "0.6.1"
+app_version = "0.6.3"
 
 required_apps = ["erpnext"]
 
@@ -21,6 +21,6 @@ doc_events = {
 }
 
 doctype_js = {
-    "DC Dispatch Run": "public/js/dc_dispatch_run_v061.js",
+    "DC Dispatch Run": "public/js/dc_dispatch_run_v063.js",
     "Stock Entry": "public/js/stock_entry_dc_dispatch_route.js",
 }

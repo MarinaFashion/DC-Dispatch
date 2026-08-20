@@ -14,6 +14,7 @@ class DCDispatchRun(Document):
     def validate(self):
         self._validate_dates()
         self._validate_size_performance()
+        self._validate_growth_forecast()
         self._validate_rows()
         self._protect_finalized_run()
 
@@ -99,6 +100,13 @@ class DCDispatchRun(Document):
                     "or clear Include Size Performance Factor."
                 )
             )
+
+    def _validate_growth_forecast(self):
+        from dc_dispatch.services.forecast_service import (
+            recalculate_final_demands,
+        )
+
+        recalculate_final_demands(self)
 
     def _validate_rows(self):
         duplicate_fields = set()
@@ -204,14 +212,40 @@ class DCDispatchRun(Document):
 
     @frappe.whitelist()
     def load_eligible_stores(self):
+        from dc_dispatch.services.forecast_service import (
+            recalculate_final_demands,
+        )
         from dc_dispatch.services.run_service import load_eligible_stores
+
+        previous_growth = {
+            row.store_warehouse: flt(
+                getattr(
+                    row,
+                    "expected_growth",
+                    0,
+                )
+            )
+            for row in self.store_rules
+        }
 
         # The store list is rebuilt by the service. Reset this flag so the
         # validation hook reapplies priority-based Tier defaults to every
         # newly/reintroduced store while still preserving planner overrides
         # between normal saves.
         self.tier_defaults_applied = 0
-        return load_eligible_stores(self)
+        result = load_eligible_stores(self)
+
+        # Preserve planner-entered forecast growth when the eligible store
+        # list is refreshed.
+        for row in self.store_rules:
+            row.expected_growth = previous_growth.get(
+                row.store_warehouse,
+                0,
+            )
+
+        recalculate_final_demands(self)
+        self.save()
+        return result
 
     @frappe.whitelist()
     def load_target_items(self):
@@ -250,12 +284,16 @@ class DCDispatchRun(Document):
 
     @frappe.whitelist()
     def approve_proposal(self):
+        from dc_dispatch.services.forecast_service import (
+            assert_forecast_configuration_unchanged,
+        )
         from dc_dispatch.services.size_performance_service import (
             assert_size_configuration_unchanged,
         )
         from dc_dispatch.services.run_service import approve_proposal
 
         assert_size_configuration_unchanged(self)
+        assert_forecast_configuration_unchanged(self)
         return approve_proposal(self)
 
     @frappe.whitelist()

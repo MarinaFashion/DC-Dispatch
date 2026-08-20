@@ -43,12 +43,22 @@
     "tier_defaults_applied",
     "stores_section",
     "store_rules",
+    "background_processing_section",
+    "background_job_status",
+    "background_job_action",
+    "background_job_column_break",
+    "background_job_message",
+    "background_job_started_at",
+    "background_job_completed_at",
+    "background_job_id",
+    "background_job_result",
     "proposal_section",
     "proposal_file",
     "proposal_summary",
     "stock_snapshot_hash",
     "calculation_input_hash",
-    "size_performance_signature"
+    "size_performance_signature",
+    "forecast_growth_signature"
   ],
   "fields": [
     {
@@ -283,6 +293,61 @@
       "options": "DC Dispatch Store Rule"
     },
     {
+      "fieldname": "background_processing_section",
+      "fieldtype": "Section Break",
+      "label": "Background Processing"
+    },
+    {
+      "default": "Idle",
+      "fieldname": "background_job_status",
+      "fieldtype": "Select",
+      "label": "Processing Status",
+      "options": "Idle\nQueued\nRunning\nCompleted\nFailed",
+      "read_only": 1
+    },
+    {
+      "fieldname": "background_job_action",
+      "fieldtype": "Data",
+      "label": "Current / Last Action",
+      "read_only": 1
+    },
+    {
+      "fieldname": "background_job_column_break",
+      "fieldtype": "Column Break"
+    },
+    {
+      "fieldname": "background_job_message",
+      "fieldtype": "Small Text",
+      "label": "Processing Message",
+      "read_only": 1
+    },
+    {
+      "fieldname": "background_job_started_at",
+      "fieldtype": "Datetime",
+      "label": "Started At",
+      "read_only": 1
+    },
+    {
+      "fieldname": "background_job_completed_at",
+      "fieldtype": "Datetime",
+      "label": "Completed At",
+      "read_only": 1
+    },
+    {
+      "fieldname": "background_job_id",
+      "fieldtype": "Data",
+      "label": "Background Job ID",
+      "hidden": 1,
+      "read_only": 1
+    },
+    {
+      "fieldname": "background_job_result",
+      "fieldtype": "Long Text",
+      "label": "Background Job Result",
+      "hidden": 1,
+      "read_only": 1
+    },
+    {
       "fieldname": "proposal_section",
       "fieldtype": "Section Break",
       "label": "Proposal Review and Execution"
@@ -318,6 +383,13 @@
       "hidden": 1,
       "label": "Size Performance Signature",
       "read_only": 1
+    },
+    {
+      "fieldname": "forecast_growth_signature",
+      "fieldtype": "Data",
+      "hidden": 1,
+      "label": "Forecast Growth Signature",
+      "read_only": 1
     }
   ],
   "links": [
@@ -326,7 +398,7 @@
       "link_fieldname": "run"
     }
   ],
-  "modified": "2026-08-20 00:00:00.000000",
+  "modified": "2026-08-21 00:00:00.000000",
   "modified_by": "Administrator",
   "module": "DC Dispatch",
   "name": "DC Dispatch Run",

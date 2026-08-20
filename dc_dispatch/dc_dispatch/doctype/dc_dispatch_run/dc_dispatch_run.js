@@ -4,8 +4,12 @@ const TARGET_FILTER_METHOD =
     "dc_dispatch.dc_dispatch.doctype.dc_dispatch_run.dc_dispatch_run.get_target_filter_options";
 const PLANNING_METRICS_METHOD =
     "dc_dispatch.services.planning_metrics_service.refresh_item_planning_metrics";
-const OPTIMIZED_PROPOSAL_METHOD =
-    "dc_dispatch.services.proposal_service_v052.calculate_proposal_optimized";
+const START_HISTORY_JOB_METHOD =
+    "dc_dispatch.services.background_service.start_history_analysis";
+const START_PROPOSAL_JOB_METHOD =
+    "dc_dispatch.services.background_service.start_proposal_calculation";
+const BACKGROUND_STATUS_METHOD =
+    "dc_dispatch.services.background_service.get_background_status";
 const TARGET_FILTER_FIELDS = ["item_year", "season", "collection", "drop", "main_group", "subgroup"];
 
 frappe.ui.form.on("DC Dispatch Run", {
@@ -18,6 +22,7 @@ frappe.ui.form.on("DC Dispatch Run", {
     refresh(frm) {
         render_summary(frm);
         recalculate_item_planning_metrics_client(frm);
+        resume_background_poll(frm);
 
         const can_approve = (frappe.user_roles || []).some(
             (role) => ["Stock Manager", "System Manager"].includes(role)
@@ -347,49 +352,187 @@ function show_filter_load_error(frm, error) {
 }
 
 async function check_store_history(frm, continue_callback) {
-    frappe.dom.freeze(__("Analyzing store history and Net Demand..."));
-    try {
-        const response = await frm.call("analyze_store_history");
-        const data = response.message || {};
-        await frm.reload_doc();
-
-        if ((data.no_history || []).length) {
-            show_no_history_dialog(frm, data, continue_callback);
-        } else {
-            frappe.show_alert({
-                message: __("All included stores have historical data"),
-                indicator: "green",
-            });
-            if (continue_callback) continue_callback();
-        }
-        return response;
-    } catch (error) {
-        console.error("DC Dispatch: Check Store History failed", error);
-        throw error;
-    } finally {
-        frappe.dom.unfreeze();
-    }
+    return start_background_action(
+        frm,
+        START_HISTORY_JOB_METHOD,
+        "Check Store History",
+        continue_callback
+    );
 }
 
 async function calculate_after_history_check(frm) {
-    frappe.dom.freeze(__("Calculating dispatch proposal..."));
-    try {
-        const response = await frappe.call({
-            method: OPTIMIZED_PROPOSAL_METHOD,
-            args: {run_name: frm.doc.name},
-        });
-        await frm.reload_doc();
-        frappe.show_alert({
-            message: __("Proposal calculated"),
-            indicator: "green",
-        });
-        return response;
-    } catch (error) {
-        console.error("DC Dispatch: Calculate Proposal failed", error);
-        throw error;
-    } finally {
-        frappe.dom.unfreeze();
+    return start_background_action(
+        frm,
+        START_PROPOSAL_JOB_METHOD,
+        "Calculate Proposal"
+    );
+}
+
+async function start_background_action(
+    frm,
+    method,
+    action,
+    continue_callback
+) {
+    if (frm.is_dirty()) {
+        await frm.save();
     }
+
+    await frappe.call({
+        method,
+        args: {run_name: frm.doc.name},
+    });
+
+    frappe.show_alert({
+        message: __("{0} started in background.", [action]),
+        indicator: "blue",
+    });
+
+    return poll_background_job(
+        frm,
+        action,
+        continue_callback,
+        true
+    );
+}
+
+function resume_background_poll(frm) {
+    if (
+        !frm.doc.name ||
+        !["Queued", "Running"].includes(
+            frm.doc.background_job_status
+        )
+    ) {
+        return;
+    }
+
+    if (frm._dc_dispatch_poll_active) {
+        return;
+    }
+
+    poll_background_job(
+        frm,
+        frm.doc.background_job_action || "",
+        null,
+        false
+    );
+}
+
+async function poll_background_job(
+    frm,
+    expected_action,
+    continue_callback,
+    immediate
+) {
+    if (frm._dc_dispatch_poll_timer) {
+        clearTimeout(frm._dc_dispatch_poll_timer);
+        frm._dc_dispatch_poll_timer = null;
+    }
+
+    frm._dc_dispatch_poll_active = true;
+
+    const poll = async () => {
+        try {
+            const response = await frappe.call({
+                method: BACKGROUND_STATUS_METHOD,
+                args: {run_name: frm.doc.name},
+            });
+
+            const data = response.message || {};
+            apply_background_status(frm, data);
+
+            if (["Queued", "Running"].includes(data.status)) {
+                frm._dc_dispatch_poll_timer = setTimeout(
+                    poll,
+                    3000
+                );
+                return;
+            }
+
+            frm._dc_dispatch_poll_active = false;
+            frm._dc_dispatch_poll_timer = null;
+
+            await frm.reload_doc();
+
+            if (data.status === "Failed") {
+                frappe.msgprint({
+                    title: __("{0} Failed", [data.action || expected_action]),
+                    message:
+                        data.message ||
+                        __("Background processing failed. Check Error Log."),
+                    indicator: "red",
+                });
+                return;
+            }
+
+            if (data.status !== "Completed") {
+                return;
+            }
+
+            if ((data.action || expected_action) === "Check Store History") {
+                const result = data.result || {};
+
+                if ((result.no_history || []).length) {
+                    show_no_history_dialog(
+                        frm,
+                        result,
+                        continue_callback
+                    );
+                } else {
+                    frappe.show_alert({
+                        message: __("All included stores have historical data"),
+                        indicator: "green",
+                    });
+
+                    if (continue_callback) {
+                        continue_callback();
+                    }
+                }
+            } else if (
+                (data.action || expected_action) === "Calculate Proposal"
+            ) {
+                frappe.show_alert({
+                    message: __("Proposal calculated"),
+                    indicator: "green",
+                });
+            }
+        } catch (error) {
+            frm._dc_dispatch_poll_active = false;
+            frm._dc_dispatch_poll_timer = null;
+            console.error(
+                "DC Dispatch background status polling failed",
+                error
+            );
+        }
+    };
+
+    if (immediate) {
+        await poll();
+    } else {
+        frm._dc_dispatch_poll_timer = setTimeout(
+            poll,
+            1000
+        );
+    }
+}
+
+function apply_background_status(frm, data) {
+    const mapping = {
+        background_job_status: data.status || "Idle",
+        background_job_action: data.action || "",
+        background_job_message: data.message || "",
+        background_job_started_at: data.started_at || null,
+        background_job_completed_at: data.completed_at || null,
+        background_job_id: data.job_id || "",
+    };
+
+    Object.entries(mapping).forEach(([fieldname, value]) => {
+        frm.doc[fieldname] = value;
+
+        if (frm.fields_dict[fieldname]) {
+            frm.refresh_field(fieldname);
+        }
+    });
 }
 
 function show_no_history_dialog(frm, data, continue_callback) {

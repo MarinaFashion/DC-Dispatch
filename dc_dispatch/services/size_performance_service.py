@@ -273,6 +273,54 @@ def build_size_context(
     }
 
 
+
+def build_size_context_from_cache(
+    run,
+    stores,
+    target_item_codes,
+    cached_size_by_template,
+    source_row_count=0,
+):
+    """Build Size Performance context without scanning Sales Invoice again."""
+    validate_size_factor_inputs(run)
+
+    if not cint(
+        getattr(
+            run,
+            "include_size_performance_factor",
+            0,
+        )
+    ):
+        return None
+
+    settings = frappe.get_single(
+        "DC Dispatch Settings"
+    )
+
+    group_by_item = (
+        size_service.variant_size_group_map(
+            set(target_item_codes or []),
+            settings=settings,
+        )
+    )
+
+    return {
+        "by_template": dict(
+            cached_size_by_template or {}
+        ),
+        "group_by_item": group_by_item,
+        "stores": list(stores),
+        "settings": settings,
+        "profile_cache": {},
+        "gross_rows": int(
+            source_row_count or 0
+        ),
+        "aggregated_templates": len(
+            cached_size_by_template or {}
+        ),
+    }
+
+
 def profile_for_cohort(run, cohort_templates, context):
     """Return relative size performance using only indexed cohort templates."""
     if not context:

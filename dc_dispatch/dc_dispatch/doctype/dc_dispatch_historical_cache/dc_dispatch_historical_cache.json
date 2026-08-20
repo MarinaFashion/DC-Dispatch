@@ -1,0 +1,105 @@
+{
+  "actions": [],
+  "allow_rename": 0,
+  "autoname": "field:run",
+  "creation": "2026-08-20 00:00:00.000000",
+  "doctype": "DocType",
+  "engine": "InnoDB",
+  "field_order": [
+    "run",
+    "input_hash",
+    "built_at",
+    "source_row_count",
+    "return_row_count",
+    "candidate_template_count",
+    "demand_data",
+    "size_data",
+    "candidate_templates_data"
+  ],
+  "fields": [
+    {
+      "fieldname": "run",
+      "fieldtype": "Link",
+      "label": "DC Dispatch Run",
+      "options": "DC Dispatch Run",
+      "reqd": 1,
+      "unique": 1,
+      "in_list_view": 1
+    },
+    {
+      "fieldname": "input_hash",
+      "fieldtype": "Data",
+      "label": "Input Hash",
+      "reqd": 1,
+      "read_only": 1
+    },
+    {
+      "fieldname": "built_at",
+      "fieldtype": "Datetime",
+      "label": "Built At",
+      "read_only": 1
+    },
+    {
+      "fieldname": "source_row_count",
+      "fieldtype": "Int",
+      "label": "Aggregated Sales Rows",
+      "read_only": 1
+    },
+    {
+      "fieldname": "return_row_count",
+      "fieldtype": "Int",
+      "label": "Resolved Return Rows",
+      "read_only": 1
+    },
+    {
+      "fieldname": "candidate_template_count",
+      "fieldtype": "Int",
+      "label": "Candidate Templates",
+      "read_only": 1
+    },
+    {
+      "fieldname": "demand_data",
+      "fieldtype": "Long Text",
+      "label": "Demand Cache",
+      "hidden": 1,
+      "read_only": 1
+    },
+    {
+      "fieldname": "size_data",
+      "fieldtype": "Long Text",
+      "label": "Size Cache",
+      "hidden": 1,
+      "read_only": 1
+    },
+    {
+      "fieldname": "candidate_templates_data",
+      "fieldtype": "Long Text",
+      "label": "Candidate Templates Cache",
+      "hidden": 1,
+      "read_only": 1
+    }
+  ],
+  "index_web_pages_for_search": 0,
+  "links": [],
+  "modified": "2026-08-20 00:00:00.000000",
+  "modified_by": "Administrator",
+  "module": "DC Dispatch",
+  "name": "DC Dispatch Historical Cache",
+  "owner": "Administrator",
+  "permissions": [
+    {
+      "read": 1,
+      "role": "Stock Manager"
+    },
+    {
+      "read": 1,
+      "write": 1,
+      "create": 1,
+      "delete": 1,
+      "role": "System Manager"
+    }
+  ],
+  "sort_field": "modified",
+  "sort_order": "DESC",
+  "states": []
+}

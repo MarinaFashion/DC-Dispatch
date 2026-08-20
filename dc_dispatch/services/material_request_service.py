@@ -6,6 +6,9 @@ import frappe
 from frappe import _
 from frappe.utils import cint, nowdate
 
+from dc_dispatch.services.forecast_service import (
+    assert_forecast_configuration_unchanged,
+)
 from dc_dispatch.services.size_performance_service import (
     assert_size_configuration_unchanged,
 )
@@ -33,6 +36,7 @@ def create_material_requests(run):
 
     assert_calculation_inputs_unchanged(run)
     assert_size_configuration_unchanged(run)
+    assert_forecast_configuration_unchanged(run)
     assert_stock_snapshot(run)
     validate_current_proposal(run)
 

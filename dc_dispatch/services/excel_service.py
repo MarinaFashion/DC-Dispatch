@@ -22,6 +22,9 @@ from dc_dispatch.services.allocation import (
 from dc_dispatch.services.dispatch_matrix_service import (
     build_dispatch_matrix,
 )
+from dc_dispatch.services.forecast_service import (
+    assert_forecast_configuration_unchanged,
+)
 from dc_dispatch.services.size_performance_service import (
     assert_size_configuration_unchanged,
 )
@@ -74,6 +77,7 @@ def export_proposal(run):
 
     assert_calculation_inputs_unchanged(run)
     assert_size_configuration_unchanged(run)
+    assert_forecast_configuration_unchanged(run)
 
     lines = _proposal_lines(run)
     if not lines:
@@ -159,6 +163,7 @@ def import_proposal(run):
 
     assert_calculation_inputs_unchanged(run)
     assert_size_configuration_unchanged(run)
+    assert_forecast_configuration_unchanged(run)
     assert_stock_snapshot(run)
 
     _filename, content = get_file(
