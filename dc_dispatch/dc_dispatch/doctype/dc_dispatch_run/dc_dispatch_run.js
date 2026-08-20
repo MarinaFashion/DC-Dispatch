@@ -32,7 +32,9 @@ frappe.ui.form.on("DC Dispatch Run", {
 
         [
             "company", "sales_from_date", "sales_to_date", "minimum_match_percent",
-            "reference_fields", "historical_reference_filters", "source_warehouse",
+            "reference_fields", "historical_reference_filters",
+            "include_size_performance_factor", "size_performance_weight",
+            "source_warehouse",
             ...TARGET_FILTER_FIELDS, "item_filters", "items", "store_rules",
         ].forEach((fieldname) => frm.set_df_property(fieldname, "read_only", editable ? 0 : 1));
 

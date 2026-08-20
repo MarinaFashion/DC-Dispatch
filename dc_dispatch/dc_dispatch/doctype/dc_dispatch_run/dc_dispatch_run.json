@@ -20,6 +20,10 @@
     "reference_fields",
     "historical_scope_section",
     "historical_reference_filters",
+    "size_performance_section",
+    "include_size_performance_factor",
+    "size_performance_column_break",
+    "size_performance_weight",
     "items_section",
     "source_warehouse",
     "target_filters_section",
@@ -43,7 +47,8 @@
     "proposal_file",
     "proposal_summary",
     "stock_snapshot_hash",
-    "calculation_input_hash"
+    "calculation_input_hash",
+    "size_performance_signature"
   ],
   "fields": [
     {
@@ -137,6 +142,31 @@
       "fieldtype": "Table",
       "label": "Historical Reference Filters",
       "options": "DC Dispatch Historical Reference Filter"
+    },
+    {
+      "fieldname": "size_performance_section",
+      "fieldtype": "Section Break",
+      "label": "Size Performance Factor"
+    },
+    {
+      "default": "0",
+      "description": "Optional secondary factor. Overall historical demand still determines each store's total quantity; this factor only influences the size mix within that total.",
+      "fieldname": "include_size_performance_factor",
+      "fieldtype": "Check",
+      "label": "Include Size Performance Factor"
+    },
+    {
+      "fieldname": "size_performance_column_break",
+      "fieldtype": "Column Break"
+    },
+    {
+      "default": "0",
+      "depends_on": "eval:doc.include_size_performance_factor==1",
+      "mandatory_depends_on": "eval:doc.include_size_performance_factor==1",
+      "description": "Higher weight gives historical relative size performance across stores more influence. 100% still preserves each store's total quantity and never exceeds available DC stock.",
+      "fieldname": "size_performance_weight",
+      "fieldtype": "Percent",
+      "label": "Size Performance Weight %"
     },
     {
       "fieldname": "items_section",
@@ -281,6 +311,13 @@
       "hidden": 1,
       "label": "Calculation Input Hash",
       "read_only": 1
+    },
+    {
+      "fieldname": "size_performance_signature",
+      "fieldtype": "Data",
+      "hidden": 1,
+      "label": "Size Performance Signature",
+      "read_only": 1
     }
   ],
   "links": [
@@ -289,7 +326,7 @@
       "link_fieldname": "run"
     }
   ],
-  "modified": "2026-08-18 00:00:00.000000",
+  "modified": "2026-08-20 00:00:00.000000",
   "modified_by": "Administrator",
   "module": "DC Dispatch",
   "name": "DC Dispatch Run",

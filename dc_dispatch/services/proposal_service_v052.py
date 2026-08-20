@@ -9,6 +9,7 @@ from frappe.utils import flt, now_datetime
 
 import dc_dispatch.services.run_service as rs
 from dc_dispatch.services import history_policy_service as history
+from dc_dispatch.services import size_performance_service as size_perf
 
 
 def _sales_from_breakdown(breakdown):
@@ -75,6 +76,7 @@ def calculate_proposal_optimized(run_name):
         frappe.throw(_("Load eligible stores before calculating."))
 
     rs._settings_and_validate()
+    size_perf.validate_size_factor_inputs(run)
     rs._validate_reference_fields(run)
     rs._lock_item_templates([row.item_template for row in run.items])
     rs._validate_not_dispatched_elsewhere(
@@ -142,6 +144,20 @@ def calculate_proposal_optimized(run_name):
         [row.item_template for row in run.items],
         run.source_warehouse,
     )
+
+    size_context = None
+    if int(getattr(run, "include_size_performance_factor", 0) or 0):
+        target_item_codes = {
+            item_code
+            for stock in stock_by_template.values()
+            for item_code in stock
+        }
+        size_context = size_perf.build_size_context(
+            run,
+            included_stores,
+            target_item_codes,
+        )
+
     fields_by_group = rs._fields_by_main_group(run)
 
     prepared = {}
@@ -250,6 +266,28 @@ def calculate_proposal_optimized(run_name):
         item_row.cohort_stores = evidence["stores"]
         item_row.warning = warning
 
+        size_profile = (
+            size_perf.profile_for_cohort(
+                run,
+                cohort,
+                size_context,
+            )
+            if size_context
+            else None
+        )
+
+        if size_context and not size_profile:
+            warning = "; ".join(
+                value
+                for value in [
+                    warning,
+                    "Size Performance Factor skipped: no mapped size sales "
+                    "were found in this historical cohort.",
+                ]
+                if value
+            )
+            item_row.warning = warning
+
         prepared[item_row.item_template] = {
             "row": item_row,
             "stock": stock,
@@ -257,6 +295,7 @@ def calculate_proposal_optimized(run_name):
             "scores": adjusted_scores,
             "cohort": cohort,
             "warning": warning,
+            "size_profile": size_profile,
         }
 
         if item_row.related_set:
@@ -337,12 +376,28 @@ def calculate_proposal_optimized(run_name):
             store_rules,
             allocation_scores,
         )
-        allocation = rs.allocate_style(
-            prepared_item["stock"],
-            prepared_item["target"],
-            store_inputs,
-            allowed_stores=allowed_by_template[template],
-        )
+        if (
+            size_context
+            and prepared_item.get("size_profile")
+        ):
+            allocation = (
+                size_perf.allocate_style_with_size_performance(
+                    prepared_item["stock"],
+                    prepared_item["target"],
+                    store_inputs,
+                    allowed_by_template[template],
+                    prepared_item["size_profile"],
+                    size_context["group_by_item"],
+                    run.size_performance_weight,
+                )
+            )
+        else:
+            allocation = rs.allocate_style(
+                prepared_item["stock"],
+                prepared_item["target"],
+                store_inputs,
+                allowed_stores=allowed_by_template[template],
+            )
 
         score_total = sum(
             max(0, value)
@@ -431,6 +486,9 @@ def calculate_proposal_optimized(run_name):
     run.calculation_input_hash = (
         rs._calculation_input_hash(run)
     )
+    run.size_performance_signature = (
+        size_perf.configuration_signature(run)
+    )
     run.proposal_file = None
     run.status = "Calculated"
     run.save()
@@ -448,4 +506,21 @@ def calculate_proposal_optimized(run_name):
             if value["warning"]
         ),
         "history_scans": 1,
+        "size_performance_enabled": bool(
+            int(
+                getattr(
+                    run,
+                    "include_size_performance_factor",
+                    0,
+                )
+                or 0
+            )
+        ),
+        "size_performance_weight": flt(
+            getattr(
+                run,
+                "size_performance_weight",
+                0,
+            )
+        ),
     }

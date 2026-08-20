@@ -5,41 +5,195 @@
   "doctype": "DocType",
   "engine": "InnoDB",
   "field_order": [
-    "company_section", "company", "default_source_warehouse", "default_dispatch_percentage",
-    "mapping_section", "warehouse_is_store_field", "warehouse_transit_field", "column_break_mapping",
-    "item_main_group_field", "item_subgroup_field", "item_related_set_field",
-    "evidence_section", "minimum_cohort_templates", "minimum_cohort_units", "minimum_cohort_stores",
-    "execution_section", "auto_submit_material_requests"
+    "company_section",
+    "company",
+    "default_source_warehouse",
+    "default_dispatch_percentage",
+    "mapping_section",
+    "warehouse_is_store_field",
+    "warehouse_transit_field",
+    "column_break_mapping",
+    "item_main_group_field",
+    "item_subgroup_field",
+    "item_related_set_field",
+    "size_configuration_section",
+    "size_attribute_name",
+    "small_size_abbreviations",
+    "medium_size_abbreviations",
+    "large_size_abbreviations",
+    "evidence_section",
+    "minimum_cohort_templates",
+    "minimum_cohort_units",
+    "minimum_cohort_stores",
+    "execution_section",
+    "auto_submit_material_requests"
   ],
   "fields": [
-    {"fieldname": "company_section", "fieldtype": "Section Break", "label": "Defaults"},
-    {"fieldname": "company", "fieldtype": "Link", "label": "Company", "options": "Company"},
-    {"fieldname": "default_source_warehouse", "fieldtype": "Link", "label": "Default Source DC", "options": "Warehouse"},
-    {"default": "80", "fieldname": "default_dispatch_percentage", "fieldtype": "Percent", "label": "Default Dispatch Percentage"},
-    {"fieldname": "mapping_section", "fieldtype": "Section Break", "label": "Existing Custom Field Mapping"},
-    {"default": "custom_is_store", "description": "Fieldname on Warehouse whose checked value identifies eligible stores. Stock Allocation creates custom_is_store.", "fieldname": "warehouse_is_store_field", "fieldtype": "Data", "label": "Warehouse Is Store Field", "reqd": 1},
-    {"default": "custom_transit_warehouse", "description": "Fieldname on Warehouse that links a store to its transit warehouse.", "fieldname": "warehouse_transit_field", "fieldtype": "Data", "label": "Warehouse Transit Field", "reqd": 1},
-    {"fieldname": "column_break_mapping", "fieldtype": "Column Break"},
-    {"default": "custom_item_main_group", "fieldname": "item_main_group_field", "fieldtype": "Data", "label": "Item Main Group Field", "reqd": 1},
-    {"default": "item_sub_group", "description": "Exact fieldname on Item. Marina uses item_sub_group.", "fieldname": "item_subgroup_field", "fieldtype": "Data", "label": "Item Subgroup Field"},
-    {"default": "custom_related_set", "fieldname": "item_related_set_field", "fieldtype": "Data", "label": "Item Related Set Field"},
-    {"fieldname": "evidence_section", "fieldtype": "Section Break", "label": "Historical Evidence Warnings"},
-    {"default": "5", "fieldname": "minimum_cohort_templates", "fieldtype": "Int", "label": "Minimum Matching Templates"},
-    {"default": "50", "fieldname": "minimum_cohort_units", "fieldtype": "Int", "label": "Minimum Net Units"},
-    {"default": "5", "fieldname": "minimum_cohort_stores", "fieldtype": "Int", "label": "Minimum Stores with Sales"},
-    {"fieldname": "execution_section", "fieldtype": "Section Break", "label": "Execution"},
-    {"default": "0", "fieldname": "auto_submit_material_requests", "fieldtype": "Check", "label": "Auto-submit Material Requests"}
+    {
+      "fieldname": "company_section",
+      "fieldtype": "Section Break",
+      "label": "Defaults"
+    },
+    {
+      "fieldname": "company",
+      "fieldtype": "Link",
+      "label": "Company",
+      "options": "Company"
+    },
+    {
+      "fieldname": "default_source_warehouse",
+      "fieldtype": "Link",
+      "label": "Default Source DC",
+      "options": "Warehouse"
+    },
+    {
+      "default": "80",
+      "fieldname": "default_dispatch_percentage",
+      "fieldtype": "Percent",
+      "label": "Default Dispatch Percentage"
+    },
+    {
+      "fieldname": "mapping_section",
+      "fieldtype": "Section Break",
+      "label": "Existing Custom Field Mapping"
+    },
+    {
+      "default": "custom_is_store",
+      "description": "Fieldname on Warehouse whose checked value identifies eligible stores. Stock Allocation creates custom_is_store.",
+      "fieldname": "warehouse_is_store_field",
+      "fieldtype": "Data",
+      "label": "Warehouse Is Store Field",
+      "reqd": 1
+    },
+    {
+      "default": "custom_transit_warehouse",
+      "description": "Fieldname on Warehouse that links a store to its transit warehouse.",
+      "fieldname": "warehouse_transit_field",
+      "fieldtype": "Data",
+      "label": "Warehouse Transit Field",
+      "reqd": 1
+    },
+    {
+      "fieldname": "column_break_mapping",
+      "fieldtype": "Column Break"
+    },
+    {
+      "default": "custom_item_main_group",
+      "fieldname": "item_main_group_field",
+      "fieldtype": "Data",
+      "label": "Item Main Group Field",
+      "reqd": 1
+    },
+    {
+      "default": "item_sub_group",
+      "description": "Exact fieldname on Item. Marina uses item_sub_group.",
+      "fieldname": "item_subgroup_field",
+      "fieldtype": "Data",
+      "label": "Item Subgroup Field"
+    },
+    {
+      "default": "custom_related_set",
+      "fieldname": "item_related_set_field",
+      "fieldtype": "Data",
+      "label": "Item Related Set Field"
+    },
+    {
+      "fieldname": "size_configuration_section",
+      "fieldtype": "Section Break",
+      "label": "Size Performance Configuration"
+    },
+    {
+      "default": "Size",
+      "description": "ERPNext Item Attribute name used for garment sizes. DC Dispatch reads the Abbreviation from the Item Attribute master.",
+      "fieldname": "size_attribute_name",
+      "fieldtype": "Data",
+      "label": "Size Item Attribute",
+      "reqd": 1
+    },
+    {
+      "default": "XS,S",
+      "description": "Comma-separated Size abbreviations treated as the Small size group.",
+      "fieldname": "small_size_abbreviations",
+      "fieldtype": "Data",
+      "label": "Small Size Abbreviations",
+      "reqd": 1
+    },
+    {
+      "default": "M",
+      "description": "Comma-separated Size abbreviations treated as the Medium size group.",
+      "fieldname": "medium_size_abbreviations",
+      "fieldtype": "Data",
+      "label": "Medium Size Abbreviations",
+      "reqd": 1
+    },
+    {
+      "default": "L,XL,XXL,XXXL",
+      "description": "Comma-separated Size abbreviations treated as the Large size group.",
+      "fieldname": "large_size_abbreviations",
+      "fieldtype": "Data",
+      "label": "Large Size Abbreviations",
+      "reqd": 1
+    },
+    {
+      "fieldname": "evidence_section",
+      "fieldtype": "Section Break",
+      "label": "Historical Evidence Warnings"
+    },
+    {
+      "default": "5",
+      "fieldname": "minimum_cohort_templates",
+      "fieldtype": "Int",
+      "label": "Minimum Matching Templates"
+    },
+    {
+      "default": "50",
+      "fieldname": "minimum_cohort_units",
+      "fieldtype": "Int",
+      "label": "Minimum Net Units"
+    },
+    {
+      "default": "5",
+      "fieldname": "minimum_cohort_stores",
+      "fieldtype": "Int",
+      "label": "Minimum Stores with Sales"
+    },
+    {
+      "fieldname": "execution_section",
+      "fieldtype": "Section Break",
+      "label": "Execution"
+    },
+    {
+      "default": "0",
+      "fieldname": "auto_submit_material_requests",
+      "fieldtype": "Check",
+      "label": "Auto-submit Material Requests"
+    }
   ],
   "issingle": 1,
   "links": [],
-  "modified": "2026-08-12 00:00:00.000000",
+  "modified": "2026-08-20 00:00:00.000000",
   "modified_by": "Administrator",
   "module": "DC Dispatch",
   "name": "DC Dispatch Settings",
   "owner": "Administrator",
   "permissions": [
-    {"create": 1, "delete": 1, "email": 1, "export": 1, "print": 1, "read": 1, "report": 1, "role": "System Manager", "share": 1, "write": 1},
-    {"read": 1, "role": "Stock Manager", "write": 1}
+    {
+      "create": 1,
+      "delete": 1,
+      "email": 1,
+      "export": 1,
+      "print": 1,
+      "read": 1,
+      "report": 1,
+      "role": "System Manager",
+      "share": 1,
+      "write": 1
+    },
+    {
+      "read": 1,
+      "role": "Stock Manager",
+      "write": 1
+    }
   ],
   "sort_field": "modified",
   "sort_order": "DESC",

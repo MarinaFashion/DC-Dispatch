@@ -22,6 +22,9 @@ from dc_dispatch.services.allocation import (
 from dc_dispatch.services.dispatch_matrix_service import (
     build_dispatch_matrix,
 )
+from dc_dispatch.services.size_performance_service import (
+    assert_size_configuration_unchanged,
+)
 from dc_dispatch.services.run_service import (
     assert_calculation_inputs_unchanged,
     assert_stock_snapshot,
@@ -70,6 +73,7 @@ def export_proposal(run):
         )
 
     assert_calculation_inputs_unchanged(run)
+    assert_size_configuration_unchanged(run)
 
     lines = _proposal_lines(run)
     if not lines:
@@ -154,6 +158,7 @@ def import_proposal(run):
         )
 
     assert_calculation_inputs_unchanged(run)
+    assert_size_configuration_unchanged(run)
     assert_stock_snapshot(run)
 
     _filename, content = get_file(
@@ -637,6 +642,40 @@ def _write_summary(
         (
             "Current Final Quantity",
             current_final,
+        ),
+        (
+            "Size Performance Factor",
+            (
+                "Yes"
+                if cint(
+                    getattr(
+                        run,
+                        "include_size_performance_factor",
+                        0,
+                    )
+                )
+                else "No"
+            ),
+        ),
+        (
+            "Size Performance Weight %",
+            (
+                flt(
+                    getattr(
+                        run,
+                        "size_performance_weight",
+                        0,
+                    )
+                )
+                if cint(
+                    getattr(
+                        run,
+                        "include_size_performance_factor",
+                        0,
+                    )
+                )
+                else 0
+            ),
         ),
     ]
 

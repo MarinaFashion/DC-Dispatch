@@ -13,6 +13,7 @@ class DCDispatchRun(Document):
 
     def validate(self):
         self._validate_dates()
+        self._validate_size_performance()
         self._validate_rows()
         self._protect_finalized_run()
 
@@ -63,6 +64,39 @@ class DCDispatchRun(Document):
                 _(
                     "Minimum Field Match % must be greater than 0 "
                     "and no more than 100."
+                )
+            )
+
+    def _validate_size_performance(self):
+        weight = flt(
+            getattr(
+                self,
+                "size_performance_weight",
+                0,
+            )
+        )
+        enabled = int(
+            getattr(
+                self,
+                "include_size_performance_factor",
+                0,
+            )
+            or 0
+        )
+
+        if weight < 0 or weight > 100:
+            frappe.throw(
+                _(
+                    "Size Performance Weight % must be "
+                    "between 0 and 100."
+                )
+            )
+
+        if enabled and weight <= 0:
+            frappe.throw(
+                _(
+                    "Enter a Size Performance Weight greater than 0, "
+                    "or clear Include Size Performance Factor."
                 )
             )
 
@@ -199,10 +233,10 @@ class DCDispatchRun(Document):
 
     @frappe.whitelist()
     def calculate_proposal(self):
-        from dc_dispatch.services.history_policy_service import (
-            calculate_proposal,
+        from dc_dispatch.services.proposal_service_v052 import (
+            calculate_proposal_optimized,
         )
-        return calculate_proposal(self)
+        return calculate_proposal_optimized(self.name)
 
     @frappe.whitelist()
     def export_proposal(self):
@@ -216,7 +250,12 @@ class DCDispatchRun(Document):
 
     @frappe.whitelist()
     def approve_proposal(self):
+        from dc_dispatch.services.size_performance_service import (
+            assert_size_configuration_unchanged,
+        )
         from dc_dispatch.services.run_service import approve_proposal
+
+        assert_size_configuration_unchanged(self)
         return approve_proposal(self)
 
     @frappe.whitelist()
