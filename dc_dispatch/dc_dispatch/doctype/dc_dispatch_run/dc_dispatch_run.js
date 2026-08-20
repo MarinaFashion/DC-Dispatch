@@ -195,10 +195,18 @@ frappe.ui.form.on("DC Dispatch Historical Reference Filter", {
 frappe.ui.form.on("DC Dispatch Run Item", {
     dispatch_percentage(frm, cdt, cdn) {
         const row = locals[cdt][cdn];
+        const dispatchPercent = flt(row.dispatch_percentage);
+        const available = flt(row.dc_qty);
+
+        row.target_qty = Math.floor(
+            available * dispatchPercent / 100 + 0.5
+        );
         row.avg_dispatch_qty_per_variant_store =
             flt(row.avg_qty_per_variant_store) *
-            flt(row.dispatch_percentage) / 100;
+            dispatchPercent / 100;
+
         frm.refresh_field("items");
+        render_summary(frm);
     },
 });
 
@@ -565,7 +573,7 @@ function show_no_history_dialog(frm, data, continue_callback) {
                         label: __("Store"),
                         in_list_view: 1,
                         read_only: 1,
-                        columns: 4,
+                        columns: 3,
                     },
                     {
                         fieldname: "decision",
@@ -582,7 +590,7 @@ function show_no_history_dialog(frm, data, continue_callback) {
                         label: __("Reference Store"),
                         options: ["", ...store_options].join("\n"),
                         in_list_view: 1,
-                        columns: 5,
+                        columns: 4,
                     },
                 ],
             },
@@ -667,13 +675,17 @@ function render_summary(frm) {
         (sum, row) => sum + cint(row.target_qty), 0
     );
     const warnings = items.filter((row) => row.warning).length;
+    const avgDispatchPercent = available > 0
+        ? target * 100 / available
+        : 0;
 
     const html = `
         <div class="row">
-            <div class="col-sm-3"><b>${__("Styles")}</b><br>${items.length}</div>
-            <div class="col-sm-3"><b>${__("Eligible Stores")}</b><br>${stores.length}</div>
-            <div class="col-sm-3"><b>${__("Available / Target")}</b><br>${format_number(available)} / ${format_number(target)}</div>
-            <div class="col-sm-3"><b>${__("Warnings")}</b><br>${warnings}</div>
+            <div class="col-sm-2"><b>${__("Styles")}</b><br>${items.length}</div>
+            <div class="col-sm-2"><b>${__("Eligible Stores")}</b><br>${stores.length}</div>
+            <div class="col-sm-4"><b>${__("Available / Target")}</b><br>${format_number(available)} / ${format_number(target)}</div>
+            <div class="col-sm-2"><b>${__("Avg Dispatch %")}</b><br>${avgDispatchPercent.toFixed(2)}%</div>
+            <div class="col-sm-2"><b>${__("Warnings")}</b><br>${warnings}</div>
         </div>`;
 
     if (frm.fields_dict.proposal_summary) {

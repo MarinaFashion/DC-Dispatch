@@ -1128,7 +1128,7 @@ def _format_simple_allocation(
             locked=True
         )
 
-    sheet.freeze_panes = "C2"
+    sheet.freeze_panes = "F2"
 
     if total_row > 2:
         sheet.auto_filter.ref = (

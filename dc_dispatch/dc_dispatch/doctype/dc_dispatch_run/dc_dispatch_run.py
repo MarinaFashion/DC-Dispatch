@@ -15,6 +15,7 @@ class DCDispatchRun(Document):
         self._validate_dates()
         self._validate_size_performance()
         self._validate_growth_forecast()
+        self._sync_target_quantities()
         self._validate_rows()
         self._protect_finalized_run()
 
@@ -107,6 +108,38 @@ class DCDispatchRun(Document):
         )
 
         recalculate_final_demands(self)
+
+    def _sync_target_quantities(self):
+        """Keep Target Qty aligned with Available DC Qty x Dispatch %.
+
+        Proposal Imported is excluded because its Target Qty is intentionally
+        promoted from the reviewed Excel matrix and becomes the authoritative
+        final style target.
+        """
+        if self.status == "Proposal Imported":
+            return
+
+        for row in self.items:
+            available = flt(
+                getattr(
+                    row,
+                    "dc_qty",
+                    0,
+                )
+            )
+            dispatch_percent = flt(
+                getattr(
+                    row,
+                    "dispatch_percentage",
+                    0,
+                )
+            )
+            row.target_qty = int(
+                available
+                * dispatch_percent
+                / 100
+                + 0.5
+            )
 
     def _validate_rows(self):
         duplicate_fields = set()
