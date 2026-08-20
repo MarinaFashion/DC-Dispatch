@@ -15,7 +15,6 @@ from dc_dispatch.services.allocation import (
     allocate_integer_with_caps,
     allocate_style,
 )
-from dc_dispatch.services import history_policy_service as history
 from dc_dispatch.services import size_service
 
 
@@ -23,12 +22,8 @@ GROUPS = ("Small", "Medium", "Large")
 
 
 def validate_size_factor_inputs(run):
-    weight = flt(
-        getattr(run, "size_performance_weight", 0)
-    )
-    enabled = cint(
-        getattr(run, "include_size_performance_factor", 0)
-    )
+    weight = flt(getattr(run, "size_performance_weight", 0))
+    enabled = cint(getattr(run, "include_size_performance_factor", 0))
 
     if weight < 0 or weight > 100:
         frappe.throw(
@@ -45,45 +40,27 @@ def validate_size_factor_inputs(run):
 
     if enabled:
         settings = frappe.get_single("DC Dispatch Settings")
-        errors = size_service.validate_size_group_configuration(
-            settings
-        )
+        errors = size_service.validate_size_group_configuration(settings)
         if errors:
             frappe.throw("<br>".join(errors[:20]))
 
 
 def configuration_signature(run):
     enabled = bool(
-        cint(
-            getattr(
-                run,
-                "include_size_performance_factor",
-                0,
-            )
-        )
+        cint(getattr(run, "include_size_performance_factor", 0))
     )
 
     if not enabled:
         payload = {"enabled": False}
     else:
-        settings = frappe.get_single(
-            "DC Dispatch Settings"
-        )
-        groups = size_service.size_group_configuration(
-            settings
-        )
+        settings = frappe.get_single("DC Dispatch Settings")
+        groups = size_service.size_group_configuration(settings)
         payload = {
             "enabled": True,
             "weight": flt(
-                getattr(
-                    run,
-                    "size_performance_weight",
-                    0,
-                )
+                getattr(run, "size_performance_weight", 0)
             ),
-            "size_attribute": (
-                size_service.size_attribute_name(settings)
-            ),
+            "size_attribute": size_service.size_attribute_name(settings),
             "groups": {
                 group: sorted(values)
                 for group, values in groups.items()
@@ -102,16 +79,11 @@ def configuration_signature(run):
 def assert_size_configuration_unchanged(run):
     current = configuration_signature(run)
     stored = str(
-        getattr(
-            run,
-            "size_performance_signature",
-            "",
-        )
-        or ""
+        getattr(run, "size_performance_signature", "") or ""
     )
 
-    # Backward compatibility for proposals calculated before v0.6.0
-    # when the size factor is disabled.
+    # Backward compatibility with proposals calculated before v0.6.0
+    # when the Size Performance Factor is disabled.
     if (
         not stored
         and not cint(
@@ -133,8 +105,16 @@ def assert_size_configuration_unchanged(run):
         )
 
 
-def _gross_size_sales_rows(run, stores):
-    if not stores:
+def _gross_size_sales_rows(run, stores, historical_templates):
+    """Load only size-level sales belonging to cohorts actually used.
+
+    v0.6.0 loaded every historical variant/store row in the date range.
+    v0.6.1 limits the SQL extraction to the union of historical templates
+    selected by the current run's cohorts.
+    """
+    stores = list(stores or [])
+    templates = sorted(set(historical_templates or []))
+    if not stores or not templates:
         return []
 
     return frappe.db.sql(
@@ -156,6 +136,8 @@ def _gross_size_sales_rows(run, stores):
           AND si.posting_date
               BETWEEN %(from_date)s AND %(to_date)s
           AND sii.warehouse IN %(stores)s
+          AND COALESCE(NULLIF(item.variant_of, ''), item.name)
+              IN %(templates)s
         GROUP BY
             COALESCE(NULLIF(item.variant_of, ''), item.name),
             sii.item_code,
@@ -166,169 +148,172 @@ def _gross_size_sales_rows(run, stores):
             "from_date": run.sales_from_date,
             "to_date": run.sales_to_date,
             "stores": tuple(stores),
+            "templates": tuple(templates),
         },
         as_dict=True,
     )
-
-
-def size_demand_breakdown(run, stores):
-    """Gross Sales - Same-Store Returns at variant/store level.
-
-    This follows the same return policy as the main historical demand
-    calculation. Cross-store and unresolved returns do not reduce demand.
-    """
-    result = {}
-
-    for row in _gross_size_sales_rows(
-        run,
-        stores,
-    ):
-        key = (
-            row.item_template,
-            row.item_code,
-            row.store_warehouse,
-        )
-        result[key] = flt(
-            row.gross_sales
-        )
-
-    store_set = set(stores)
-    for row in history._return_rows(
-        run,
-        stores,
-    ):
-        if (
-            row.return_classification
-            != "Same-Store Return - Deducted"
-        ):
-            continue
-
-        store = row.return_store_warehouse
-        if store not in store_set:
-            continue
-
-        key = (
-            row.item_template,
-            row.item_code,
-            store,
-        )
-        result[key] = (
-            flt(result.get(key, 0))
-            - flt(row.return_qty)
-        )
-
-    return result
 
 
 def build_size_context(
     run,
     stores,
     target_item_codes,
+    historical_templates,
+    resolved_returns,
 ):
+    """Build one reusable, pre-aggregated size history index.
+
+    The expensive work happens once per proposal:
+      1. one size-level sales SQL query, already restricted to used cohorts;
+      2. reuse the main calculation's already-resolved return rows;
+      3. one bulk Item Variant -> Size Group mapping;
+      4. pre-aggregate to Template -> (Store, Size Group) -> Qty.
+
+    profile_for_cohort() therefore never scans the complete historical
+    variant dataset again.
+    """
     validate_size_factor_inputs(run)
 
     if not cint(
-        getattr(
-            run,
-            "include_size_performance_factor",
-            0,
-        )
+        getattr(run, "include_size_performance_factor", 0)
     ):
         return None
 
-    settings = frappe.get_single(
-        "DC Dispatch Settings"
-    )
+    settings = frappe.get_single("DC Dispatch Settings")
+    historical_templates = set(historical_templates or [])
 
-    demand = size_demand_breakdown(
+    gross_rows = _gross_size_sales_rows(
         run,
         stores,
+        historical_templates,
     )
 
+    relevant_returns = [
+        row
+        for row in (resolved_returns or [])
+        if (
+            row.item_template in historical_templates
+            and row.return_classification
+            == "Same-Store Return - Deducted"
+        )
+    ]
+
     historical_item_codes = {
-        item_code
-        for _template, item_code, _store
-        in demand
+        row.item_code
+        for row in gross_rows
+        if row.item_code
     }
+    historical_item_codes.update(
+        row.item_code
+        for row in relevant_returns
+        if row.item_code
+    )
+
     all_item_codes = (
         historical_item_codes
         | set(target_item_codes or [])
     )
 
-    group_by_item = (
-        size_service.variant_size_group_map(
-            all_item_codes,
-            settings=settings,
+    group_by_item = size_service.variant_size_group_map(
+        all_item_codes,
+        settings=settings,
+    )
+
+    # Net demand at variant/store level follows the same rule as the
+    # main proposal: Gross Sales - Same-Store Returns.
+    net_by_variant_store = defaultdict(float)
+
+    for row in gross_rows:
+        key = (
+            row.item_template,
+            row.item_code,
+            row.store_warehouse,
         )
-    )
+        net_by_variant_store[key] += flt(row.gross_sales)
 
-    return {
-        "demand": demand,
-        "group_by_item": group_by_item,
-        "stores": list(stores),
-        "settings": settings,
-    }
+    for row in relevant_returns:
+        key = (
+            row.item_template,
+            row.item_code,
+            row.return_store_warehouse,
+        )
+        net_by_variant_store[key] -= flt(row.return_qty)
 
-
-def profile_for_cohort(
-    run,
-    cohort_templates,
-    context,
-):
-    if not context:
-        return None
-
-    cohort_templates = set(
-        cohort_templates or []
-    )
-    if not cohort_templates:
-        return None
-
-    demand_by_store_group = defaultdict(
-        float
-    )
-    group_totals = defaultdict(float)
-    store_totals = defaultdict(float)
+    # Main performance fix:
+    # Collapse potentially many variant rows into at most Store x 3 groups
+    # for each historical template before any target-style loop begins.
+    by_template = defaultdict(lambda: defaultdict(float))
 
     for (
         template,
         item_code,
         store,
-    ), quantity in context["demand"].items():
-        if template not in cohort_templates:
-            continue
-
-        group = context[
-            "group_by_item"
-        ].get(item_code)
+    ), quantity in net_by_variant_store.items():
+        group = group_by_item.get(item_code)
         if not group:
             continue
 
-        quantity = max(
-            0.0,
-            flt(quantity),
-        )
+        quantity = max(0.0, flt(quantity))
         if quantity <= 0:
             continue
 
-        demand_by_store_group[
-            (store, group)
-        ] += quantity
-        group_totals[group] += quantity
-        store_totals[store] += quantity
+        by_template[template][(store, group)] += quantity
 
-    mapped_units = sum(
-        group_totals.values()
-    )
+    return {
+        "by_template": {
+            template: dict(values)
+            for template, values in by_template.items()
+        },
+        "group_by_item": group_by_item,
+        "stores": list(stores),
+        "settings": settings,
+        "profile_cache": {},
+        "gross_rows": len(gross_rows),
+        "aggregated_templates": len(by_template),
+    }
+
+
+def profile_for_cohort(run, cohort_templates, context):
+    """Return relative size performance using only indexed cohort templates."""
+    if not context:
+        return None
+
+    cohort_templates = frozenset(cohort_templates or [])
+    if not cohort_templates:
+        return None
+
+    cache = context["profile_cache"]
+    if cohort_templates in cache:
+        return cache[cohort_templates]
+
+    demand_by_store_group = defaultdict(float)
+    group_totals = defaultdict(float)
+    store_totals = defaultdict(float)
+
+    # v0.6.0 scanned every historical variant/store record here for
+    # every target style. v0.6.1 touches only the already aggregated
+    # records of templates in this cohort.
+    for template in cohort_templates:
+        for (
+            store,
+            group,
+        ), quantity in context["by_template"].get(
+            template,
+            {},
+        ).items():
+            demand_by_store_group[(store, group)] += quantity
+            group_totals[group] += quantity
+            store_totals[store] += quantity
+
+    mapped_units = sum(group_totals.values())
     if mapped_units <= 0:
+        cache[cohort_templates] = None
         return None
 
     indices = {}
+
     for store in context["stores"]:
-        store_total = max(
-            0.0,
-            store_totals.get(store, 0),
-        )
+        store_total = max(0.0, store_totals.get(store, 0))
         overall_store_share = (
             store_total / mapped_units
             if mapped_units
@@ -354,43 +339,31 @@ def profile_for_cohort(
             ):
                 index = 1.0
             else:
-                group_store_share = (
-                    store_group
-                    / group_total
-                )
+                group_store_share = store_group / group_total
                 index = (
                     group_store_share
                     / overall_store_share
                 )
 
-            indices[
-                (store, group)
-            ] = max(
+            indices[(store, group)] = max(
                 0.0,
                 flt(index),
             )
 
-    # A no-history store that uses a reference store should inherit
-    # that reference store's relative size behavior just as it inherits
-    # the main demand score.
+    # A no-history store inherits the relative size behavior of the same
+    # reference store used by the main demand calculation.
     for rule in run.store_rules:
         if (
-            rule.decision
-            != "Use Reference Store"
+            rule.decision != "Use Reference Store"
             or not rule.reference_store
         ):
             continue
+
         for group in GROUPS:
             indices[
-                (
-                    rule.store_warehouse,
-                    group,
-                )
+                (rule.store_warehouse, group)
             ] = indices.get(
-                (
-                    rule.reference_store,
-                    group,
-                ),
+                (rule.reference_store, group),
                 1.0,
             )
 
@@ -398,42 +371,23 @@ def profile_for_cohort(
         group: (
             max(
                 0.0,
-                group_totals.get(
-                    group,
-                    0,
-                ),
+                group_totals.get(group, 0),
             )
             / mapped_units
         )
         for group in GROUPS
     }
 
-    return {
+    profile = {
         "indices": indices,
-        "network_group_shares": (
-            network_group_shares
-        ),
+        "network_group_shares": network_group_shares,
         "mapped_units": mapped_units,
     }
+    cache[cohort_templates] = profile
+    return profile
 
 
-def _store_order(store):
-    return (
-        TIER_ORDER.get(
-            store.tier,
-            99,
-        ),
-        int(store.priority or 0),
-        -float(store.score or 0),
-        store.warehouse,
-    )
-
-
-def _fixed_minimums(
-    baseline,
-    stores,
-    variants,
-):
+def _fixed_minimums(baseline, stores, variants):
     fixed = {
         store.warehouse: {
             variant: 0
@@ -445,51 +399,32 @@ def _fixed_minimums(
     for store in stores:
         minimum = max(
             0,
-            int(
-                store.minimum_per_variant
-                or 0
-            ),
+            int(store.minimum_per_variant or 0),
         )
         if minimum <= 0:
             continue
 
-        baseline_row = (
-            baseline.quantities.get(
-                store.warehouse,
-                {},
-            )
+        row = baseline.quantities.get(
+            store.warehouse,
+            {},
         )
 
         if all(
-            int(
-                baseline_row.get(
-                    variant,
-                    0,
-                )
-            )
-            >= minimum
+            int(row.get(variant, 0)) >= minimum
             for variant in variants
         ):
             for variant in variants:
-                fixed[
-                    store.warehouse
-                ][variant] = minimum
+                fixed[store.warehouse][variant] = minimum
 
     return fixed
 
 
-def _variant_room(
-    store,
-    quantities,
-    variant,
-):
+def _variant_room(store, quantities, variant):
     maximum = max(
         0,
-        int(
-            store.maximum_per_style
-            or 0
-        ),
+        int(store.maximum_per_style or 0),
     )
+
     if maximum == 0:
         return 10**9
 
@@ -517,9 +452,7 @@ def _desired_variant_additions(
             for variant in remaining_stock
         }
 
-    physical_total = sum(
-        remaining_stock.values()
-    )
+    physical_total = sum(remaining_stock.values())
     if physical_total <= 0:
         return {
             variant: 0
@@ -529,22 +462,14 @@ def _desired_variant_additions(
     stock_by_group = defaultdict(int)
     other_variants = []
 
-    for variant, quantity in (
-        remaining_stock.items()
-    ):
-        group = group_by_item.get(
-            variant
-        )
+    for variant, quantity in remaining_stock.items():
+        group = group_by_item.get(variant)
         if group:
             stock_by_group[group] += quantity
         else:
-            other_variants.append(
-                variant
-            )
+            other_variants.append(variant)
 
-    mapped_stock = sum(
-        stock_by_group.values()
-    )
+    mapped_stock = sum(stock_by_group.values())
     mapped_share = (
         mapped_stock / physical_total
         if physical_total
@@ -554,11 +479,7 @@ def _desired_variant_additions(
     available_groups = [
         group
         for group in GROUPS
-        if stock_by_group.get(
-            group,
-            0,
-        )
-        > 0
+        if stock_by_group.get(group, 0) > 0
     ]
 
     historical_total = sum(
@@ -581,6 +502,7 @@ def _desired_variant_additions(
             stock_by_group[group]
             / physical_total
         )
+
         if historical_total > 0:
             historical_share = (
                 mapped_share
@@ -596,49 +518,38 @@ def _desired_variant_additions(
                 / historical_total
             )
         else:
-            historical_share = (
-                stock_share
-            )
+            historical_share = stock_share
 
         group_weights[group] = (
-            (1 - weight)
-            * stock_share
-            + weight
-            * historical_share
+            (1 - weight) * stock_share
+            + weight * historical_share
         )
 
     other_stock = sum(
-        remaining_stock[
-            variant
-        ]
+        remaining_stock[variant]
         for variant in other_variants
     )
+
     if other_stock > 0:
-        # Unmapped sizes remain neutral and follow their available
-        # stock share; the size factor never guesses their behavior.
+        # Unmapped sizes remain neutral. The factor never guesses their
+        # historical behavior.
         group_weights["__OTHER__"] = (
-            other_stock
-            / physical_total
+            other_stock / physical_total
         )
 
     group_caps = {
         group: (
             other_stock
             if group == "__OTHER__"
-            else stock_by_group.get(
-                group,
-                0,
-            )
+            else stock_by_group.get(group, 0)
         )
         for group in group_weights
     }
 
-    group_targets = (
-        allocate_integer_with_caps(
-            remaining_total,
-            group_weights,
-            group_caps,
-        )
+    group_targets = allocate_integer_with_caps(
+        remaining_total,
+        group_weights,
+        group_caps,
     )
 
     variant_targets = {
@@ -646,35 +557,22 @@ def _desired_variant_additions(
         for variant in remaining_stock
     }
 
-    for group, group_target in (
-        group_targets.items()
-    ):
+    for group, group_target in group_targets.items():
         if group == "__OTHER__":
             variants = other_variants
         else:
             variants = [
                 variant
                 for variant in remaining_stock
-                if (
-                    group_by_item.get(
-                        variant
-                    )
-                    == group
-                )
+                if group_by_item.get(variant) == group
             ]
 
         caps = {
-            variant: remaining_stock[
-                variant
-            ]
+            variant: remaining_stock[variant]
             for variant in variants
         }
         weights = {
-            variant: float(
-                remaining_stock[
-                    variant
-                ]
-            )
+            variant: float(remaining_stock[variant])
             for variant in variants
         }
 
@@ -683,12 +581,9 @@ def _desired_variant_additions(
             weights,
             caps,
         )
-        for variant, quantity in (
-            split.items()
-        ):
-            variant_targets[
-                variant
-            ] = quantity
+
+        for variant, quantity in split.items():
+            variant_targets[variant] = quantity
 
     return variant_targets
 
@@ -706,19 +601,115 @@ def _preference_weight(
         0.0,
         flt(
             profile["indices"].get(
-                (
-                    store,
-                    group,
-                ),
+                (store, group),
                 1.0,
             )
         ),
     )
+
     return max(
         0.000001,
-        (1 - weight)
-        + weight * index,
+        (1 - weight) + weight * index,
     )
+
+
+def _scarcity_pressure(
+    variant,
+    variants,
+    remaining_stock,
+    group_by_item,
+    network_group_shares,
+):
+    group = group_by_item.get(variant)
+    if not group:
+        return (0.0, variant)
+
+    total_stock = sum(remaining_stock.values())
+    if total_stock <= 0:
+        return (0.0, variant)
+
+    stock_group = sum(
+        remaining_stock[value]
+        for value in variants
+        if group_by_item.get(value) == group
+    )
+    stock_share = stock_group / total_stock
+
+    historical_share = max(
+        0.0,
+        flt(
+            network_group_shares.get(
+                group,
+                0,
+            )
+        ),
+    )
+
+    ratio = (
+        historical_share / stock_share
+        if stock_share > 0
+        else historical_share
+    )
+    return (ratio, variant)
+
+
+def _allocate_variant_to_stores(
+    variant,
+    quantity,
+    stores,
+    quantities,
+    remaining_need,
+    profile,
+    group_by_item,
+    weight,
+):
+    quantity = max(0, int(quantity))
+    if quantity <= 0:
+        return 0
+
+    group = group_by_item.get(variant)
+    caps = {}
+    weights = {}
+
+    for store in stores:
+        room = min(
+            remaining_need[store.warehouse],
+            _variant_room(
+                store,
+                quantities,
+                variant,
+            ),
+        )
+        if room <= 0:
+            continue
+
+        caps[store.warehouse] = room
+        weights[store.warehouse] = _preference_weight(
+            profile,
+            store.warehouse,
+            group,
+            weight,
+        )
+
+    if not caps:
+        return 0
+
+    assigned = allocate_integer_with_caps(
+        quantity,
+        weights,
+        caps,
+    )
+
+    total = 0
+    for store_name, value in assigned.items():
+        if value <= 0:
+            continue
+
+        quantities[store_name][variant] += value
+        remaining_need[store_name] -= value
+        total += value
+
+    return total
 
 
 def allocate_style_with_size_performance(
@@ -730,25 +721,23 @@ def allocate_style_with_size_performance(
     group_by_item,
     weight_percent,
 ):
-    """Keep store totals from the current demand allocator, then optimize sizes.
+    """Optimize size mix without changing the existing store total allocation.
 
-    Hard constraints:
-      - actual DC stock per variant
-      - store total from the existing historical-demand allocation
-      - Tier minimum bundle
-      - Tier maximum per variant
+    The current allocator remains the authoritative baseline for:
+      - total Qty per store;
+      - Tier minimum bundle;
+      - Tier maximum per variant;
+      - Related Set eligible stores;
+      - physical stock feasibility.
 
-    Soft objective:
-      - weighted relative size performance across stores
-      - network size mix versus current DC size mix
+    Size Performance is a secondary objective only.
     """
     stores = [
         store
         for store in stores
         if (
             allowed_stores is None
-            or store.warehouse
-            in allowed_stores
+            or store.warehouse in allowed_stores
         )
     ]
 
@@ -763,8 +752,7 @@ def allocate_style_with_size_performance(
         1.0,
         max(
             0.0,
-            flt(weight_percent)
-            / 100.0,
+            flt(weight_percent) / 100.0,
         ),
     )
 
@@ -776,16 +764,10 @@ def allocate_style_with_size_performance(
         return baseline
 
     physical_stock = {
-        variant: max(
-            0,
-            floor(quantity),
-        )
-        for variant, quantity
-        in variant_stock.items()
+        variant: max(0, floor(quantity))
+        for variant, quantity in variant_stock.items()
     }
-    variants = list(
-        physical_stock
-    )
+    variants = list(physical_stock)
 
     target_store_totals = {
         store.warehouse: sum(
@@ -842,71 +824,31 @@ def allocate_style_with_size_performance(
         for variant in variants
     }
 
-    remaining_total = sum(
-        remaining_need.values()
-    )
+    remaining_total = sum(remaining_need.values())
     if remaining_total <= 0:
         return baseline
 
-    desired_variant = (
-        _desired_variant_additions(
-            remaining_stock,
-            remaining_total,
-            group_by_item,
-            profile[
-                "network_group_shares"
-            ],
-            weight,
-        )
+    desired_variant = _desired_variant_additions(
+        remaining_stock,
+        remaining_total,
+        group_by_item,
+        profile["network_group_shares"],
+        weight,
     )
-
-    def pressure(variant):
-        group = group_by_item.get(
-            variant
-        )
-        if not group:
-            return (0.0, variant)
-
-        stock_group = sum(
-            remaining_stock[v]
-            for v in variants
-            if group_by_item.get(v) == group
-        )
-        total_stock = sum(
-            remaining_stock.values()
-        )
-        stock_share = (
-            stock_group / total_stock
-            if total_stock
-            else 0
-        )
-        hist_share = max(
-            0.0,
-            flt(
-                profile[
-                    "network_group_shares"
-                ].get(group, 0)
-            ),
-        )
-        ratio = (
-            hist_share / stock_share
-            if stock_share > 0
-            else hist_share
-        )
-        return (
-            ratio,
-            variant,
-        )
 
     ordered_variants = sorted(
         variants,
-        key=pressure,
+        key=lambda variant: _scarcity_pressure(
+            variant,
+            variants,
+            remaining_stock,
+            group_by_item,
+            profile["network_group_shares"],
+        ),
         reverse=True,
     )
 
-    # Phase A: try to reach the blended desired quantity for every
-    # variant, giving that size to stores with stronger relative
-    # performance while respecting each store's fixed total.
+    # Phase A: approach the blended historical/stock size mix.
     for variant in ordered_variants:
         target = min(
             remaining_stock[variant],
@@ -923,149 +865,50 @@ def allocate_style_with_size_performance(
         if target <= 0:
             continue
 
-        group = group_by_item.get(
-            variant
-        )
-        caps = {}
-        weights = {}
-
-        for store in stores:
-            room = min(
-                remaining_need[
-                    store.warehouse
-                ],
-                _variant_room(
-                    store,
-                    quantities,
-                    variant,
-                ),
-            )
-            if room <= 0:
-                continue
-            caps[
-                store.warehouse
-            ] = room
-            weights[
-                store.warehouse
-            ] = _preference_weight(
-                profile,
-                store.warehouse,
-                group,
-                weight,
-            )
-
-        if not caps:
-            continue
-
-        assigned = (
-            allocate_integer_with_caps(
-                target,
-                weights,
-                caps,
-            )
+        assigned = _allocate_variant_to_stores(
+            variant,
+            target,
+            stores,
+            quantities,
+            remaining_need,
+            profile,
+            group_by_item,
+            weight,
         )
 
-        for store_name, quantity in (
-            assigned.items()
-        ):
-            if quantity <= 0:
-                continue
-            quantities[
-                store_name
-            ][variant] += quantity
-            remaining_need[
-                store_name
-            ] -= quantity
-            remaining_stock[
-                variant
-            ] -= quantity
+        remaining_stock[variant] -= assigned
 
-    # Phase B: desired group totals are soft. If Tier caps made the
-    # preferred mix infeasible, use any remaining physical stock to
-    # complete the original store totals, still preferring the best
-    # relative size/store fit.
+    # Phase B: historical size mix is soft. If buying mix or Tier caps make
+    # that target impossible, use remaining physical stock to preserve the
+    # original total Qty assigned to every store.
     for variant in ordered_variants:
         available = min(
-            remaining_stock[
-                variant
-            ],
-            sum(
-                remaining_need.values()
-            ),
+            remaining_stock[variant],
+            sum(remaining_need.values()),
         )
         if available <= 0:
             continue
 
-        group = group_by_item.get(
-            variant
-        )
-        caps = {}
-        weights = {}
-
-        for store in stores:
-            room = min(
-                remaining_need[
-                    store.warehouse
-                ],
-                _variant_room(
-                    store,
-                    quantities,
-                    variant,
-                ),
-            )
-            if room <= 0:
-                continue
-            caps[
-                store.warehouse
-            ] = room
-            weights[
-                store.warehouse
-            ] = _preference_weight(
-                profile,
-                store.warehouse,
-                group,
-                weight,
-            )
-
-        if not caps:
-            continue
-
-        assigned = (
-            allocate_integer_with_caps(
-                available,
-                weights,
-                caps,
-            )
+        assigned = _allocate_variant_to_stores(
+            variant,
+            available,
+            stores,
+            quantities,
+            remaining_need,
+            profile,
+            group_by_item,
+            weight,
         )
 
-        for store_name, quantity in (
-            assigned.items()
-        ):
-            if quantity <= 0:
-                continue
-            quantities[
-                store_name
-            ][variant] += quantity
-            remaining_need[
-                store_name
-            ] -= quantity
-            remaining_stock[
-                variant
-            ] -= quantity
+        remaining_stock[variant] -= assigned
 
-    # The baseline allocator is already known to be feasible. If the
-    # size optimization cannot preserve every store total because of
-    # a rare cap combination, fall back to the baseline rather than
-    # return an unsafe or incomplete proposal.
+    # Safety fallback: never return an incomplete/unsafe matrix.
     if any(
         quantity > 0
-        for quantity in (
-            remaining_need.values()
-        )
+        for quantity in remaining_need.values()
     ):
         return baseline
 
-    # Final defensive checks.
     for variant in variants:
         allocated = sum(
             quantities[
@@ -1073,17 +916,14 @@ def allocate_style_with_size_performance(
             ][variant]
             for store in stores
         )
-        if allocated > physical_stock[
-            variant
-        ]:
+        if allocated > physical_stock[variant]:
             return baseline
 
     for store in stores:
         store_total = sum(
-            quantities[
-                store.warehouse
-            ].values()
+            quantities[store.warehouse].values()
         )
+
         if (
             store_total
             != target_store_totals[
@@ -1094,20 +934,15 @@ def allocate_style_with_size_performance(
 
         maximum = max(
             0,
-            int(
-                store.maximum_per_style
-                or 0
-            ),
+            int(store.maximum_per_style or 0),
         )
-        if maximum:
-            if any(
-                quantities[
-                    store.warehouse
-                ][variant]
-                > maximum
-                for variant in variants
-            ):
-                return baseline
+        if maximum and any(
+            quantities[
+                store.warehouse
+            ][variant] > maximum
+            for variant in variants
+        ):
+            return baseline
 
     variant_targets = {
         variant: sum(
