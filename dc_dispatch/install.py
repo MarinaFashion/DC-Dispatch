@@ -2,6 +2,67 @@ import frappe
 from frappe.custom.doctype.custom_field.custom_field import create_custom_fields
 
 
+# Warehouse metadata required by DC Dispatch.
+#
+# These fieldnames intentionally match the fields used by Marina's Stock
+# Allocation app. Frappe stores a Custom Field uniquely by DocType + fieldname,
+# so if another app has already created the same fields, create_custom_fields
+# with update=True reuses/updates those fields instead of creating duplicates.
+#
+# DC Dispatch defines them itself so the app can be installed and used without
+# requiring Stock Allocation to be installed first.
+WAREHOUSE_FIELDS = [
+    {
+        "fieldname": "stock_alloc_section",
+        "label": "Stock Allocation",
+        "fieldtype": "Section Break",
+        "insert_after": "warehouse_type",
+        "collapsible": 1,
+    },
+    {
+        "fieldname": "custom_is_store",
+        "label": "Is Store (used in Allocation)",
+        "fieldtype": "Check",
+        "insert_after": "stock_alloc_section",
+        "description": (
+            "Marks this warehouse as a retail store eligible to receive/source "
+            "stock in allocation and dispatch runs."
+        ),
+    },
+    {
+        "fieldname": "custom_is_distribution_center",
+        "label": "Is Distribution Center (used in Allocation)",
+        "fieldtype": "Check",
+        "insert_after": "custom_is_store",
+        "description": (
+            "Marks this warehouse as a distribution center/source warehouse "
+            "for allocation and DC Dispatch."
+        ),
+    },
+    {
+        "fieldname": "custom_is_transit",
+        "label": "Is Transit Warehouse (used in Allocation)",
+        "fieldtype": "Check",
+        "insert_after": "custom_is_distribution_center",
+        "description": (
+            "Marks this warehouse as a transit warehouse used between the "
+            "distribution center and the final store."
+        ),
+    },
+    {
+        "fieldname": "custom_transit_warehouse",
+        "label": "Transit Warehouse (for Allocation)",
+        "fieldtype": "Link",
+        "options": "Warehouse",
+        "insert_after": "custom_is_transit",
+        "description": (
+            "Transit warehouse associated with this store. DC Dispatch uses "
+            "this warehouse for the transit leg before the final store."
+        ),
+    },
+]
+
+
 TRACE_FIELDS = [
     {
         "fieldname": "custom_dc_dispatch_run",
@@ -33,19 +94,28 @@ TRACE_FIELDS = [
 
 
 CUSTOM_FIELDS = {
+    "Warehouse": WAREHOUSE_FIELDS,
     "Material Request": TRACE_FIELDS,
     "Stock Entry": TRACE_FIELDS,
 }
 
 
 def after_install():
-    create_custom_fields(CUSTOM_FIELDS, update=True)
+    _ensure_custom_fields()
     _seed_settings()
 
 
 def after_migrate():
-    create_custom_fields(CUSTOM_FIELDS, update=True)
+    _ensure_custom_fields()
     _seed_settings()
+
+
+def _ensure_custom_fields():
+    """Create/update DC Dispatch metadata without deleting existing values."""
+    create_custom_fields(
+        CUSTOM_FIELDS,
+        update=True,
+    )
 
 
 def _seed_settings():
