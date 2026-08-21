@@ -8,6 +8,7 @@ from frappe.utils import flt
 from openpyxl import load_workbook
 
 from dc_dispatch.services import history_evidence_service as base
+from dc_dispatch.services import size_evidence_service
 
 
 SHEET_NAME = "Score Reconciliation"
@@ -392,7 +393,7 @@ def _rewrite_reconciliation(workbook, run):
 
 @frappe.whitelist()
 def download_history_evidence(run_name):
-    """Export normal evidence, then reconcile all score transformations."""
+    """Export score and Size Performance reconciliation evidence."""
     run = frappe.get_doc(
         "DC Dispatch Run",
         run_name,
@@ -413,6 +414,11 @@ def download_history_evidence(run_name):
     )
 
     _rewrite_reconciliation(
+        workbook,
+        run,
+    )
+
+    size_evidence_service.add_size_performance_reconciliation(
         workbook,
         run,
     )
