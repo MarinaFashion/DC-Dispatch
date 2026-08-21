@@ -59,15 +59,15 @@
     },
     {
       "default": "custom_is_store",
-      "description": "Fieldname on Warehouse whose checked value identifies eligible stores. Stock Allocation creates custom_is_store.",
+      "description": "Fieldname on Warehouse whose checked value identifies eligible stores. DC Dispatch creates/maintains custom_is_store.",
       "fieldname": "warehouse_is_store_field",
       "fieldtype": "Data",
       "label": "Warehouse Is Store Field",
       "reqd": 1
     },
     {
-      "default": "custom_transit_warehouse",
-      "description": "Fieldname on Warehouse that links a store to its transit warehouse.",
+      "default": "default_in_transit_warehouse",
+      "description": "ERPNext standard Warehouse field that links a store to its default in-transit warehouse.",
       "fieldname": "warehouse_transit_field",
       "fieldtype": "Data",
       "label": "Warehouse Transit Field",
@@ -171,7 +171,7 @@
   ],
   "issingle": 1,
   "links": [],
-  "modified": "2026-08-20 00:00:00.000000",
+  "modified": "2026-08-21 00:00:00.000000",
   "modified_by": "Administrator",
   "module": "DC Dispatch",
   "name": "DC Dispatch Settings",

@@ -4,13 +4,13 @@ from frappe.custom.doctype.custom_field.custom_field import create_custom_fields
 
 # Warehouse metadata required by DC Dispatch.
 #
-# These fieldnames intentionally match the fields used by Marina's Stock
-# Allocation app. Frappe stores a Custom Field uniquely by DocType + fieldname,
-# so if another app has already created the same fields, create_custom_fields
-# with update=True reuses/updates those fields instead of creating duplicates.
+# DC Dispatch owns only the classification fields below. The transit warehouse
+# link itself is ERPNext's standard Warehouse.default_in_transit_warehouse
+# field and is intentionally NOT duplicated as a custom field.
 #
-# DC Dispatch defines them itself so the app can be installed and used without
-# requiring Stock Allocation to be installed first.
+# These classification fieldnames intentionally match Marina's Stock Allocation
+# app. If that app has already created them, create_custom_fields(update=True)
+# reuses/updates the same Custom Field records instead of creating duplicates.
 WAREHOUSE_FIELDS = [
     {
         "fieldname": "stock_alloc_section",
@@ -47,17 +47,6 @@ WAREHOUSE_FIELDS = [
         "description": (
             "Marks this warehouse as a transit warehouse used between the "
             "distribution center and the final store."
-        ),
-    },
-    {
-        "fieldname": "custom_transit_warehouse",
-        "label": "Transit Warehouse (for Allocation)",
-        "fieldtype": "Link",
-        "options": "Warehouse",
-        "insert_after": "custom_is_transit",
-        "description": (
-            "Transit warehouse associated with this store. DC Dispatch uses "
-            "this warehouse for the transit leg before the final store."
         ),
     },
 ]
@@ -122,7 +111,7 @@ def _seed_settings():
     settings = frappe.get_single("DC Dispatch Settings")
     defaults = {
         "warehouse_is_store_field": "custom_is_store",
-        "warehouse_transit_field": "custom_transit_warehouse",
+        "warehouse_transit_field": "default_in_transit_warehouse",
         "item_main_group_field": "custom_item_main_group",
         "item_subgroup_field": "item_sub_group",
         "item_related_set_field": "custom_related_set",
@@ -138,14 +127,24 @@ def _seed_settings():
             settings.set(fieldname, value)
             changed = True
 
-    legacy_is_store_field = "custom_is_store_used_in_allocation"
     warehouse_meta = frappe.get_meta("Warehouse")
+
+    legacy_is_store_field = "custom_is_store_used_in_allocation"
     if (
         settings.warehouse_is_store_field == legacy_is_store_field
         and not warehouse_meta.get_field(legacy_is_store_field)
         and warehouse_meta.get_field("custom_is_store")
     ):
         settings.warehouse_is_store_field = "custom_is_store"
+        changed = True
+
+    # v0.6.9 and earlier used a custom transit link. From v0.6.10 onward,
+    # always use ERPNext's standard Warehouse.default_in_transit_warehouse.
+    if (
+        settings.warehouse_transit_field == "custom_transit_warehouse"
+        and warehouse_meta.get_field("default_in_transit_warehouse")
+    ):
+        settings.warehouse_transit_field = "default_in_transit_warehouse"
         changed = True
 
     legacy_subgroup_field = "custom_item_sub_group"
