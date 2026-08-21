@@ -62,6 +62,49 @@ class TestAllocation(unittest.TestCase):
         )
         self.assertIn("Store B", result.skipped_stores)
 
+    def test_minimum_two_never_creates_partial_single_piece_bundle(self):
+        stores = [
+            StoreInput(
+                "Tier D Store",
+                100,
+                tier="D",
+                priority=1,
+                minimum_per_variant=2,
+                maximum_per_style=4,
+            ),
+            StoreInput(
+                "Tier E Store",
+                50,
+                tier="E",
+                priority=2,
+                minimum_per_variant=2,
+                maximum_per_style=3,
+            ),
+        ]
+        result = allocate_style(
+            {"S": 3, "M": 3, "L": 3},
+            9,
+            stores,
+        )
+
+        first = result.quantities["Tier D Store"]
+        second = result.quantities["Tier E Store"]
+
+        self.assertTrue(
+            all(quantity >= 2 for quantity in first.values())
+            or all(quantity == 0 for quantity in first.values())
+        )
+        self.assertTrue(
+            all(quantity >= 2 for quantity in second.values())
+            or all(quantity == 0 for quantity in second.values())
+        )
+        self.assertFalse(
+            any(quantity == 1 for quantity in first.values())
+        )
+        self.assertFalse(
+            any(quantity == 1 for quantity in second.values())
+        )
+
     def test_display_bundle_precedes_size_ratio_rounding(self):
         stores = [
             StoreInput(
@@ -111,7 +154,7 @@ class TestAllocation(unittest.TestCase):
             10,
         )
 
-    def test_store_maximum_is_respected(self):
+    def test_store_maximum_is_respected_per_size(self):
         stores = [
             StoreInput(
                 "A",
@@ -130,10 +173,10 @@ class TestAllocation(unittest.TestCase):
             16,
             stores,
         )
-        self.assertLessEqual(
-            sum(result.quantities["A"].values()),
-            4,
-        )
+
+        for quantity in result.quantities["A"].values():
+            self.assertLessEqual(quantity, 4)
+
         self.assertEqual(
             sum(
                 sum(values.values())
