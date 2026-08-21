@@ -44,8 +44,8 @@ VISIBLE_FIXED_HEADERS = [
 ]
 
 TOTAL_HEADERS = [
-    "Total Dispatched",
     "Total DC Qty",
+    "Total Dispatched",
     "Remaining Qty",
 ]
 
@@ -260,12 +260,15 @@ def import_proposal(run):
         )
 
     # Store columns must remain exactly the current active stores.
-    total_dispatched_col = headers["Total Dispatched"]
+    # v0.6.5 layout keeps A:E fixed, so stores start immediately after
+    # Remaining Qty and end immediately before the hidden technical columns.
+    first_store_col = headers["Remaining Qty"] + 1
+    last_store_col = headers["__Item Code"] - 1
     actual_store_headers = [
         sheet.cell(1, column).value
         for column in range(
-            headers["Size"] + 1,
-            total_dispatched_col,
+            first_store_col,
+            last_store_col + 1,
         )
     ]
 
@@ -785,10 +788,13 @@ def _write_simple_allocation(
         matrix["stores"]
     )
 
+    # Keep the five planner reference columns together at the left:
+    # Item Template, Size, Total Dispatched, Total DC Qty, Remaining Qty.
+    # Store columns start after them so Excel can freeze A:E as one block.
     headers = (
         VISIBLE_FIXED_HEADERS
-        + stores
         + TOTAL_HEADERS
+        + stores
         + TECHNICAL_HEADERS
     )
     sheet.append(headers)
@@ -797,21 +803,15 @@ def _write_simple_allocation(
     run_id_col = len(headers) - 1
     revision_col = len(headers)
 
-    first_store_col = 3
+    total_dc_col = 3
+    total_dispatched_col = 4
+    remaining_col = 5
+
+    first_store_col = 6
     last_store_col = (
         first_store_col
         + len(stores)
         - 1
-    )
-
-    total_dispatched_col = (
-        last_store_col + 1
-    )
-    total_dc_col = (
-        last_store_col + 2
-    )
-    remaining_col = (
-        last_store_col + 3
     )
 
     for row_index, row in enumerate(
