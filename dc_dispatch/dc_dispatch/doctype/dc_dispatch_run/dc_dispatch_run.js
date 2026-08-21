@@ -7,7 +7,7 @@ const PLANNING_METRICS_METHOD =
 const START_HISTORY_JOB_METHOD =
     "dc_dispatch.services.background_service.start_history_analysis";
 const START_PROPOSAL_JOB_METHOD =
-    "dc_dispatch.services.background_service.start_proposal_calculation";
+    "dc_dispatch.services.planning_guard_service.start_proposal_calculation";
 const BACKGROUND_STATUS_METHOD =
     "dc_dispatch.services.background_service.get_background_status";
 const TARGET_FILTER_FIELDS = ["item_year", "season", "collection", "drop", "main_group", "subgroup"];
@@ -93,7 +93,7 @@ frappe.ui.form.on("DC Dispatch Run", {
         ) {
             frm.add_custom_button(__("Export Historical Evidence"), () => {
                 open_url_post(
-                    "/api/method/dc_dispatch.services.history_evidence_service.download_history_evidence",
+                    "/api/method/dc_dispatch.services.history_evidence_v066.download_history_evidence",
                     {run_name: frm.doc.name}
                 );
             }, __("Proposal"));
