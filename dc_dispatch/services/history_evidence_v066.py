@@ -8,6 +8,7 @@ from frappe.utils import flt
 from openpyxl import load_workbook
 
 from dc_dispatch.services import history_evidence_service as base
+from dc_dispatch.services import history_evidence_light_service as light
 from dc_dispatch.services import size_evidence_service
 
 
@@ -118,11 +119,6 @@ def _expected_scores(run, rows):
     for target, related_set in target_set.items():
         if related_set:
             members_by_set[related_set].append(target)
-
-    base_by_target_store = {
-        (row["target"], row["store"]): row
-        for row in rows
-    }
 
     forecast = {}
     for row in rows:
@@ -393,14 +389,16 @@ def _rewrite_reconciliation(workbook, run):
 
 @frappe.whitelist()
 def download_history_evidence(run_name):
-    """Export score and Size Performance reconciliation evidence."""
+    """Fast standard evidence export for planning validation."""
     run = frappe.get_doc(
         "DC Dispatch Run",
         run_name,
     )
     run.check_permission("read")
 
-    base.export_history_evidence(
+    # v0.6.8: use the persisted history cache and omit transaction-heavy
+    # Sales by Store / Return Audit sheets from the standard export.
+    light.export_lightweight_history_evidence(
         run
     )
 
@@ -431,3 +429,27 @@ def download_history_evidence(run_name):
         output.read()
     )
     frappe.local.response.type = "binary"
+
+
+@frappe.whitelist()
+def download_detailed_history_audit(run_name):
+    """Optional legacy detailed export containing transaction-heavy sheets."""
+    run = frappe.get_doc(
+        "DC Dispatch Run",
+        run_name,
+    )
+    run.check_permission("read")
+
+    base.export_history_evidence(
+        run
+    )
+
+    frappe.local.response.filename = (
+        f"{run.name}-Detailed-Historical-Audit"
+        + (
+            f"-R{run.revision}"
+            if run.revision
+            else ""
+        )
+        + ".xlsx"
+    )
