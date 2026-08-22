@@ -408,13 +408,11 @@ def validate_current_proposal(run):
         frappe.throw("<br>".join(errors[:20]))
 
     final_by_variant = defaultdict(int)
-    final_by_template = defaultdict(int)
     for line in lines:
         quantity = 0 if line.exclude else int(line.final_qty or 0)
         if quantity < 0:
             frappe.throw(_("Final quantities cannot be negative."))
         final_by_variant[line.item_code] += quantity
-        final_by_template[line.item_template] += quantity
     snapshots = {
         row.item_code: floor(flt(row.actual_qty))
         for row in frappe.get_all(
@@ -427,10 +425,6 @@ def validate_current_proposal(run):
     for item_code, quantity in final_by_variant.items():
         if quantity > snapshots.get(item_code, 0):
             frappe.throw(_("Final quantity for {0} exceeds the DC stock snapshot.").format(item_code))
-    targets = {row.item_template: int(row.target_qty or 0) for row in run.items}
-    for template, quantity in final_by_template.items():
-        if quantity > targets.get(template, 0):
-            frappe.throw(_("Final quantity for {0} exceeds its dispatch target.").format(template))
 
 
 def assert_stock_snapshot(run):
