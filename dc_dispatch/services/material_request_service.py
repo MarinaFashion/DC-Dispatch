@@ -94,18 +94,17 @@ def _required_stores(run):
 def get_material_request_creation_status(run):
     required_stores = _required_stores(run)
 
-    active_requests = frappe.get_all(
+    requests = frappe.get_all(
         "Material Request",
         filters={
             "custom_dc_dispatch_run": run.name,
-            "docstatus": ["<", 2],
         },
         fields=["custom_final_store_warehouse"],
         limit_page_length=0,
     )
     existing_stores = {
         row.custom_final_store_warehouse
-        for row in active_requests
+        for row in requests
         if row.custom_final_store_warehouse
     }
     missing_stores = sorted(
@@ -420,24 +419,17 @@ def create_material_requests(
             {
                 "custom_dc_dispatch_run": run.name,
                 "custom_final_store_warehouse": store,
-                "docstatus": ["<", 2],
             },
             "name",
         )
         if existing_request:
+            # Missing-only recovery:
+            # any existing Material Request record (Draft, Submitted, or
+            # Cancelled) is left completely untouched. A replacement is
+            # created only when no Material Request record exists for the
+            # required store.
             persist_batch_lock()
-            frappe.db.set_value(
-                "Material Request",
-                existing_request,
-                "title",
-                material_request_title,
-                update_modified=True,
-            )
             existing.append(existing_request)
-            _link_lines(
-                store_lines,
-                existing_request,
-            )
             continue
 
         savepoint = f"dc_dispatch_mr_{index}"
