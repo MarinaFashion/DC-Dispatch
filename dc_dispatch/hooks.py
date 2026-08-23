@@ -4,7 +4,7 @@ app_publisher = "Marina Trading Company"
 app_description = "Sales-informed initial DC dispatch planning"
 app_email = "it@marinafashion.com.sa"
 app_license = "MIT"
-app_version = "0.6.12"
+app_version = "0.6.13"
 
 required_apps = ["erpnext"]
 
@@ -17,6 +17,10 @@ doc_events = {
     },
     "Stock Entry": {
         "validate": "dc_dispatch.stock_entry_events.preserve_dispatch_route",
+    },
+    "Material Request": {
+        "on_cancel": "dc_dispatch.material_request_events.clear_proposal_links",
+        "on_trash": "dc_dispatch.material_request_events.clear_proposal_links",
     }
 }
 
