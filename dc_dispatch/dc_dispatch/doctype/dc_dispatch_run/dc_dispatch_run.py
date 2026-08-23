@@ -344,13 +344,18 @@ class DCDispatchRun(Document):
         return get_material_request_creation_status(self)
 
     @frappe.whitelist()
-    def create_material_requests(self, dispatch_group_no=None):
+    def create_material_requests(
+        self,
+        dispatch_group_no=None,
+        material_request_title=None,
+    ):
         from dc_dispatch.services.material_request_service import (
             create_material_requests,
         )
         return create_material_requests(
             self,
             dispatch_group_no=dispatch_group_no,
+            material_request_title=material_request_title,
         )
 
     @frappe.whitelist()

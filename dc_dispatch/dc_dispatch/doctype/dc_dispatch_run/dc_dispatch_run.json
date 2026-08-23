@@ -122,7 +122,7 @@
       "fieldname": "dispatch_batch_code",
       "fieldtype": "Data",
       "in_list_view": 1,
-      "label": "Dispatch Batch Code",
+      "label": "Material Request Title",
       "read_only": 1
     },
     {

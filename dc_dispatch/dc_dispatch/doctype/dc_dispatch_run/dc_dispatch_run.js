@@ -371,13 +371,17 @@ async function show_material_request_batch_dialog(frm) {
                 fieldname: "dispatch_batch_code",
                 fieldtype: "Data",
                 label: __("Material Request Title"),
-                read_only: 1,
+                reqd: 1,
+                read_only: suggestion.locked ? 1 : 0,
                 default:
                     suggestion.dispatch_batch_code ||
                     build_dispatch_batch_code_client(
                         frm,
                         suggestion.dispatch_group_no || 1
                     ),
+                description: suggestion.locked
+                    ? __("This title is locked because Material Requests have already been created for this Run.")
+                    : __("Suggested automatically. You may edit it before the first Material Request creation."),
             },
         ],
         primary_action_label: __("Create Material Requests"),
@@ -399,6 +403,8 @@ async function show_material_request_batch_dialog(frm) {
                     {
                         dispatch_group_no:
                             values.dispatch_group_no,
+                        material_request_title:
+                            values.dispatch_batch_code,
                     }
                 );
                 await frm.reload_doc();

@@ -156,11 +156,17 @@ def suggest_dispatch_group(run):
         getattr(run, "dispatch_group_no", 0)
     )
     if stored_group > 0:
+        stored_title = str(
+            getattr(run, "dispatch_batch_code", "")
+            or ""
+        ).strip()
+        if not stored_title:
+            stored_title = build_dispatch_batch_code(
+                run, stored_group
+            )
         return {
             "dispatch_group_no": stored_group,
-            "dispatch_batch_code": build_dispatch_batch_code(
-                run, stored_group
-            ),
+            "dispatch_batch_code": stored_title,
             "locked": True,
         }
 
@@ -194,7 +200,11 @@ def suggest_dispatch_group(run):
     }
 
 
-def create_material_requests(run, dispatch_group_no=None):
+def create_material_requests(
+    run,
+    dispatch_group_no=None,
+    material_request_title=None,
+):
     _require_stock_manager()
     frappe.db.get_value(
         "DC Dispatch Run",
@@ -225,9 +235,32 @@ def create_material_requests(run, dispatch_group_no=None):
     else:
         group_no = requested_group
 
-    batch_code = build_dispatch_batch_code(
+    suggested_batch_code = build_dispatch_batch_code(
         run, group_no
     )
+
+    if stored_group > 0:
+        stored_title = str(
+            getattr(run, "dispatch_batch_code", "")
+            or ""
+        ).strip()
+        material_request_title = (
+            stored_title or suggested_batch_code
+        )
+    else:
+        material_request_title = str(
+            material_request_title
+            or suggested_batch_code
+        ).strip()
+
+    if not material_request_title:
+        frappe.throw(
+            _("Material Request Title is required.")
+        )
+    if len(material_request_title) > 140:
+        frappe.throw(
+            _("Material Request Title cannot exceed 140 characters.")
+        )
 
     conflict = frappe.db.get_value(
         "DC Dispatch Run",
@@ -245,22 +278,11 @@ def create_material_requests(run, dispatch_group_no=None):
     if conflict:
         frappe.throw(
             _(
-                "Dispatch Batch Code {0} is already used by {1}. "
+                "Dispatch Group {0} is already used by {1} "
+                "for this Company / Year / Collection / Drop. "
                 "Choose another Dispatch Group No."
-            ).format(batch_code, conflict)
+            ).format(group_no, conflict)
         )
-
-    frappe.db.set_value(
-        "DC Dispatch Run",
-        run.name,
-        {
-            "dispatch_group_no": group_no,
-            "dispatch_batch_code": batch_code,
-        },
-        update_modified=True,
-    )
-    run.dispatch_group_no = group_no
-    run.dispatch_batch_code = batch_code
 
     is_recovery = run.status == "Material Requests Created"
 
@@ -301,6 +323,31 @@ def create_material_requests(run, dispatch_group_no=None):
             _("The approved proposal has no quantities to request.")
         )
 
+    # Do not lock the group/title yet. It becomes permanent only after at
+    # least one active Material Request already exists or one new Material
+    # Request is created successfully. This prevents failed first attempts
+    # from reserving a group/title while still keeping retries stable after
+    # partial success.
+    batch_lock_persisted = stored_group > 0
+
+    def persist_batch_lock():
+        nonlocal batch_lock_persisted
+        if batch_lock_persisted:
+            return
+
+        frappe.db.set_value(
+            "DC Dispatch Run",
+            run.name,
+            {
+                "dispatch_group_no": group_no,
+                "dispatch_batch_code": material_request_title,
+            },
+            update_modified=False,
+        )
+        run.dispatch_group_no = group_no
+        run.dispatch_batch_code = material_request_title
+        batch_lock_persisted = True
+
     grouped = defaultdict(list)
     for line in lines:
         grouped[
@@ -325,11 +372,12 @@ def create_material_requests(run, dispatch_group_no=None):
             "name",
         )
         if existing_request:
+            persist_batch_lock()
             frappe.db.set_value(
                 "Material Request",
                 existing_request,
                 "title",
-                batch_code,
+                material_request_title,
                 update_modified=True,
             )
             existing.append(existing_request)
@@ -346,7 +394,7 @@ def create_material_requests(run, dispatch_group_no=None):
             document = frappe.new_doc("Material Request")
             document.company = run.company
             document.material_request_type = "Material Transfer"
-            document.title = batch_code
+            document.title = material_request_title
             document.transaction_date = nowdate()
             document.schedule_date = nowdate()
             document.set_from_warehouse = run.source_warehouse
@@ -356,7 +404,7 @@ def create_material_requests(run, dispatch_group_no=None):
             document.custom_dc_dispatch_instructions = (
                 f"Initial dispatch generated from {run.name}, "
                 f"revision {run.revision}, "
-                f"batch {batch_code}. "
+                f"batch {material_request_title}. "
                 f"Ship through {transit} to final store {store}."
             )
 
@@ -384,11 +432,12 @@ def create_material_requests(run, dispatch_group_no=None):
                 "Material Request",
                 document.name,
                 "title",
-                batch_code,
+                material_request_title,
                 update_modified=False,
             )
-            document.title = batch_code
+            document.title = material_request_title
 
+            persist_batch_lock()
             created.append(document.name)
             _link_lines(
                 store_lines,
@@ -486,7 +535,7 @@ def create_material_requests(run, dispatch_group_no=None):
         "existing": existing,
         "errors": errors,
         "total": len(all_requests),
-        "dispatch_batch_code": batch_code,
+        "dispatch_batch_code": material_request_title,
         "picking_list": picking_list,
         "picking_list_error": picking_list_error,
     }
