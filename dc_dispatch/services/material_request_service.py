@@ -146,9 +146,62 @@ def get_material_request_creation_status(run):
         "complete": (
             requests_complete
             and batch_code_ready
-            and picking_list_exists
         ),
     }
+
+
+def generate_picking_list(run):
+    _require_stock_manager()
+
+    status = get_material_request_creation_status(run)
+    if not status["requests_complete"]:
+        frappe.throw(
+            _(
+                "Warehouse Picking List cannot be generated until all "
+                "required Material Requests exist."
+            )
+        )
+
+    required_stores = _required_stores(run)
+    requests = frappe.get_all(
+        "Material Request",
+        filters={
+            "custom_dc_dispatch_run": run.name,
+            "docstatus": ["<", 2],
+        },
+        fields=["name", "custom_final_store_warehouse"],
+        limit_page_length=0,
+    )
+
+    material_requests = sorted(
+        {
+            row.name
+            for row in requests
+            if row.custom_final_store_warehouse in required_stores
+        }
+    )
+
+    if len(material_requests) != len(required_stores):
+        frappe.throw(
+            _(
+                "The active Material Requests do not match all required "
+                "stores. Refresh the Run and recreate missing requests first."
+            )
+        )
+
+    from dc_dispatch.services.picking_list_service import (
+        create_and_attach_picking_list,
+        delete_generated_picking_lists,
+    )
+
+    delete_generated_picking_lists(
+        run.name,
+        run.revision,
+    )
+    return create_and_attach_picking_list(
+        run,
+        material_requests,
+    )
 
 
 def suggest_dispatch_group(run):

@@ -344,6 +344,13 @@ class DCDispatchRun(Document):
         return get_material_request_creation_status(self)
 
     @frappe.whitelist()
+    def generate_picking_list(self):
+        from dc_dispatch.services.material_request_service import (
+            generate_picking_list,
+        )
+        return generate_picking_list(self)
+
+    @frappe.whitelist()
     def create_material_requests(
         self,
         dispatch_group_no=None,

@@ -261,10 +261,6 @@ async function configure_material_request_button(frm) {
     );
 
     if (status.complete) {
-        // Frappe grouped custom buttons can render as dropdown links, where
-        // the HTML "disabled" property alone does not reliably block clicks.
-        // Remove the click handler as well so the completed action is truly
-        // disabled until a later refresh detects a missing Material Request.
         button.prop("disabled", true);
         button.addClass("disabled");
         button.attr("aria-disabled", "true");
@@ -273,6 +269,30 @@ async function configure_material_request_button(frm) {
             __("All required Material Requests already exist.")
         );
         button.off("click");
+
+        if (!status.picking_list_exists) {
+            frm.add_custom_button(
+                __("Generate Warehouse Picking List"),
+                async () => {
+                    frappe.dom.freeze(
+                        __("Generating Warehouse Picking List...")
+                    );
+                    try {
+                        await frm.call("generate_picking_list");
+                        await frm.reload_doc();
+                        frappe.show_alert({
+                            message: __(
+                                "Warehouse Picking List generated"
+                            ),
+                            indicator: "green",
+                        });
+                    } finally {
+                        frappe.dom.unfreeze();
+                    }
+                },
+                __("Execute")
+            );
+        }
         return;
     }
 
@@ -298,14 +318,7 @@ async function configure_material_request_button(frm) {
         return;
     }
 
-    if (!status.picking_list_exists) {
-        button.attr(
-            "title",
-            __(
-                "All Material Requests exist, but the Warehouse Picking List is missing. Run to regenerate it."
-            )
-        );
-    }
+
 }
 
 
