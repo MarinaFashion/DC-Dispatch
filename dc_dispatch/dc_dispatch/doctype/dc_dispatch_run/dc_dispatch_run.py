@@ -330,11 +330,28 @@ class DCDispatchRun(Document):
         return approve_proposal(self)
 
     @frappe.whitelist()
-    def create_material_requests(self):
+    def suggest_dispatch_group(self):
+        from dc_dispatch.services.material_request_service import (
+            suggest_dispatch_group,
+        )
+        return suggest_dispatch_group(self)
+
+    @frappe.whitelist()
+    def material_request_creation_status(self):
+        from dc_dispatch.services.material_request_service import (
+            get_material_request_creation_status,
+        )
+        return get_material_request_creation_status(self)
+
+    @frappe.whitelist()
+    def create_material_requests(self, dispatch_group_no=None):
         from dc_dispatch.services.material_request_service import (
             create_material_requests,
         )
-        return create_material_requests(self)
+        return create_material_requests(
+            self,
+            dispatch_group_no=dispatch_group_no,
+        )
 
     @frappe.whitelist()
     def cancel_run(self):

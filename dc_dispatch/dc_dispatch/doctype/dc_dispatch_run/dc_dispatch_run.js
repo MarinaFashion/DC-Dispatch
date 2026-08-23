@@ -140,17 +140,7 @@ frappe.ui.form.on("DC Dispatch Run", {
         }
 
         if (can_approve && ["Approved", "Material Requests Created"].includes(frm.doc.status)) {
-            frm.add_custom_button(__("Create Material Requests"), () => {
-                frappe.confirm(
-                    __("Create Material Requests from the approved quantities?"),
-                    () => direct_doc_action(
-                        frm,
-                        "create_material_requests",
-                        __("Material Requests processed"),
-                        __("Creating Material Requests...")
-                    )
-                );
-            }, __("Execute"));
+            configure_material_request_button(frm);
         }
     },
 
@@ -247,6 +237,184 @@ async function direct_doc_action(
     } finally {
         frappe.dom.unfreeze();
     }
+}
+
+async function configure_material_request_button(frm) {
+    let status;
+    try {
+        const response = await frm.call(
+            "material_request_creation_status"
+        );
+        status = response.message || {};
+    } catch (error) {
+        console.error(
+            "Could not check Material Request status",
+            error
+        );
+        return;
+    }
+
+    const button = frm.add_custom_button(
+        __("Create Material Requests"),
+        () => show_material_request_batch_dialog(frm),
+        __("Execute")
+    );
+
+    if (status.complete) {
+        // Frappe grouped custom buttons can render as dropdown links, where
+        // the HTML "disabled" property alone does not reliably block clicks.
+        // Remove the click handler as well so the completed action is truly
+        // disabled until a later refresh detects a missing Material Request.
+        button.prop("disabled", true);
+        button.addClass("disabled");
+        button.attr("aria-disabled", "true");
+        button.attr(
+            "title",
+            __("All required Material Requests already exist.")
+        );
+        button.off("click");
+        return;
+    }
+
+    const missing = status.missing || [];
+    if (missing.length) {
+        button.attr(
+            "title",
+            __(
+                "{0} Material Request(s) missing. Only missing requests will be created.",
+                [missing.length]
+            )
+        );
+        return;
+    }
+
+    if (!status.batch_code_ready) {
+        button.attr(
+            "title",
+            __(
+                "Material Requests already exist. Run once to assign the Dispatch Batch Code and update their titles."
+            )
+        );
+        return;
+    }
+
+    if (!status.picking_list_exists) {
+        button.attr(
+            "title",
+            __(
+                "All Material Requests exist, but the Warehouse Picking List is missing. Run to regenerate it."
+            )
+        );
+    }
+}
+
+
+function build_dispatch_batch_code_client(frm, group_no) {
+    const collection = String(frm.doc.collection || "").trim();
+    const collection_match = collection.match(/[A-Za-z0-9]/);
+    const year_match = String(frm.doc.item_year || "").match(/\d{2,4}/);
+    const drop_match = String(frm.doc.drop || "").match(/\d+/);
+    const group = cint(group_no || 0);
+
+    if (
+        !collection_match ||
+        !year_match ||
+        !drop_match ||
+        group < 1
+    ) {
+        return "";
+    }
+
+    const year_code = year_match[0].slice(-2);
+    const drop_no = cint(drop_match[0]);
+    return (
+        collection_match[0].toUpperCase() +
+        year_code +
+        "-D" +
+        drop_no +
+        "-G" +
+        group
+    );
+}
+
+
+async function show_material_request_batch_dialog(frm) {
+    const response = await frm.call("suggest_dispatch_group");
+    const suggestion = response.message || {};
+
+    let dialog;
+    dialog = new frappe.ui.Dialog({
+        title: __("Create Material Requests"),
+        fields: [
+            {
+                fieldname: "dispatch_group_no",
+                fieldtype: "Int",
+                label: __("Dispatch Group No."),
+                reqd: 1,
+                default: cint(
+                    suggestion.dispatch_group_no || 1
+                ),
+                read_only: suggestion.locked ? 1 : 0,
+                onchange() {
+                    const group_no = dialog.get_value(
+                        "dispatch_group_no"
+                    );
+                    dialog.set_value(
+                        "dispatch_batch_code",
+                        build_dispatch_batch_code_client(
+                            frm, group_no
+                        )
+                    );
+                },
+            },
+            {
+                fieldname: "dispatch_batch_code",
+                fieldtype: "Data",
+                label: __("Material Request Title"),
+                read_only: 1,
+                default:
+                    suggestion.dispatch_batch_code ||
+                    build_dispatch_batch_code_client(
+                        frm,
+                        suggestion.dispatch_group_no || 1
+                    ),
+            },
+        ],
+        primary_action_label: __("Create Material Requests"),
+        async primary_action(values) {
+            if (cint(values.dispatch_group_no || 0) < 1) {
+                frappe.msgprint(
+                    __("Dispatch Group No. must be 1 or greater.")
+                );
+                return;
+            }
+
+            dialog.hide();
+            frappe.dom.freeze(
+                __("Creating Material Requests...")
+            );
+            try {
+                await frm.call(
+                    "create_material_requests",
+                    {
+                        dispatch_group_no:
+                            values.dispatch_group_no,
+                    }
+                );
+                await frm.reload_doc();
+                frappe.show_alert({
+                    message: __(
+                        "Material Requests processed"
+                    ),
+                    indicator: "green",
+                });
+            } finally {
+                frappe.dom.unfreeze();
+            }
+        },
+    });
+
+    dialog.show();
 }
 
 function load_item_field_metadata(frm) {

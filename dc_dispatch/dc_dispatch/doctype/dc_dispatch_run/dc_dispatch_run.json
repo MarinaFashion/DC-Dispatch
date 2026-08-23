@@ -13,6 +13,8 @@
     "column_break_identity",
     "revision",
     "calculated_at",
+    "dispatch_group_no",
+    "dispatch_batch_code",
     "reference_section",
     "sales_from_date",
     "sales_to_date",
@@ -108,6 +110,19 @@
       "fieldname": "calculated_at",
       "fieldtype": "Datetime",
       "label": "Calculated At",
+      "read_only": 1
+    },
+    {
+      "fieldname": "dispatch_group_no",
+      "fieldtype": "Int",
+      "label": "Dispatch Group No.",
+      "read_only": 1
+    },
+    {
+      "fieldname": "dispatch_batch_code",
+      "fieldtype": "Data",
+      "in_list_view": 1,
+      "label": "Dispatch Batch Code",
       "read_only": 1
     },
     {
